@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
+import { contentText } from "@earendil-works/pi-ai";
 import {
 	BorderedLoader,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
+	type SessionEntry,
+	type SessionMessageEntry,
 	TreeSelectorComponent,
 } from "@earendil-works/pi-coding-agent";
 import { minimatch } from "minimatch";
@@ -18,9 +21,7 @@ import {
 	resolveRangeEndpoint,
 	sourceSha8,
 } from "./core/range-rewrite.ts";
-import { serializeEntry, textOfContent } from "./core/serialize.ts";
-import type { AgentMessage, MessageEntry, SessionEntry } from "./core/types.ts";
-import { isMessageEntry } from "./core/types.ts";
+import { serializeEntry } from "./core/serialize.ts";
 import { type Deps, draftRangeSummary } from "./extension/draft.ts";
 import { refreshAmbient } from "./panel.ts";
 import {
@@ -106,22 +107,18 @@ function firstLine(text: string, max = 80): string {
 	return line.length > max ? `${line.slice(0, max)}…` : line;
 }
 
-function isUserMessage(entry: SessionEntry): boolean {
-	return isMessageEntry(entry) && (entry as MessageEntry).message.role === "user";
-}
-
 function isAnswerEntry(entry: SessionEntry): boolean {
-	if (!isMessageEntry(entry)) return false;
-	const role = (entry as MessageEntry).message.role;
+	if (entry.type !== "message") return false;
+	const role = entry.message.role;
 	return role === "assistant" || role === "toolResult" || role === "bashExecution";
 }
 
-function primaryArg(snapshot: SessionSnapshot, entry: MessageEntry): string | undefined {
+function primaryArg(snapshot: SessionSnapshot, entry: SessionMessageEntry): string | undefined {
 	const message = entry.message;
 	if (message.role === "bashExecution") return message.command.slice(0, 60);
 	if (message.role !== "toolResult") return undefined;
 	const parent = entry.parentId ? snapshotEntry(snapshot, entry.parentId) : undefined;
-	if (!parent || !isMessageEntry(parent) || parent.message.role !== "assistant") return undefined;
+	if (!parent || parent.type !== "message" || parent.message.role !== "assistant") return undefined;
 	for (const block of parent.message.content) {
 		if (block.type !== "toolCall" || block.id !== message.toolCallId) continue;
 		const args = block.arguments ?? {};
@@ -136,7 +133,7 @@ function primaryArg(snapshot: SessionSnapshot, entry: MessageEntry): string | un
 }
 
 function toolNameOf(entry: SessionEntry): string | undefined {
-	if (!isMessageEntry(entry)) return undefined;
+	if (entry.type !== "message") return undefined;
 	if (entry.message.role === "toolResult") return entry.message.toolName;
 	if (entry.message.role === "bashExecution") return entry.message.excludeFromContext ? undefined : "bash";
 	return undefined;
@@ -148,7 +145,7 @@ export function cropCandidates(snapshot: SessionSnapshot): CropCandidate[] {
 	for (let index = snapshot.contextEntries.length - 1; index >= 0; index--) {
 		assistantsAfter[index] = count;
 		const entry = snapshot.contextEntries[index];
-		if (entry && isMessageEntry(entry) && entry.message.role === "assistant") count += 1;
+		if (entry?.type === "message" && entry.message.role === "assistant") count += 1;
 	}
 
 	const latestPerTool = new Map<string, string>();
@@ -159,12 +156,13 @@ export function cropCandidates(snapshot: SessionSnapshot): CropCandidate[] {
 
 	const candidates: CropCandidate[] = [];
 	snapshot.contextEntries.forEach((entry, index) => {
+		if (entry.type !== "message") return;
 		const tool = toolNameOf(entry);
 		if (!tool) return;
 		candidates.push({
 			entryId: entry.id,
 			tool,
-			arg: primaryArg(snapshot, entry as MessageEntry),
+			arg: primaryArg(snapshot, entry),
 			estTokens: estimateEntryTokens(entry),
 			ageTurns: assistantsAfter[index] ?? 0,
 			protected: latestPerTool.get(tool) === entry.id,
@@ -210,11 +208,12 @@ export function planCrop(snapshot: SessionSnapshot, markedIds: string[]): CropPl
 	if (!firstGroup || !lastGroup) throw new Error("marked crop entry is not in a safe rewrite group");
 	const rewrite = prepareRewrite(snapshot, firstGroup.startEntryId, lastGroup.endEntryId);
 	const stubs: CtreeCropStub[] = ordered.map((id) => {
-		const entry = snapshotEntry(snapshot, id) as MessageEntry;
-		const body =
-			entry.message.role === "bashExecution"
-				? entry.message.output
-				: textOfContent((entry.message as Extract<AgentMessage, { role: "toolResult" }>).content);
+		const entry = snapshotEntry(snapshot, id);
+		if (!entry || entry.type !== "message") throw new Error(`entry ${id} is not a message`);
+		let body: string;
+		if (entry.message.role === "bashExecution") body = entry.message.output;
+		else if (entry.message.role === "toolResult") body = contentText(entry.message.content, "\n");
+		else throw new Error(`entry ${id} is not a tool result`);
 		return {
 			entryId: id,
 			tool: toolNameOf(entry) ?? "tool",
@@ -236,12 +235,10 @@ export function contextTurns(snapshot: SessionSnapshot): ContextTurn[] {
 	const turns: ContextTurn[] = [];
 	let current: ContextTurn | null = null;
 	for (const entry of snapshot.contextEntries) {
-		if (isUserMessage(entry)) {
+		if (entry.type === "message" && entry.message.role === "user") {
 			current = {
 				userId: entry.id,
-				label: firstLine(
-					textOfContent(((entry as MessageEntry).message as Extract<AgentMessage, { role: "user" }>).content),
-				),
+				label: firstLine(contentText(entry.message.content, "\n")),
 				entryIds: [entry.id],
 				estTokens: estimateEntryTokens(entry),
 			};
@@ -501,7 +498,7 @@ async function selectNativeEntry(
 		phase === "start" ? "Select the first entry of the range" : "Select the last entry of the range",
 		"info",
 	);
-	if (!ctx.ui.custom) {
+	if (ctx.mode !== "tui") {
 		ctx.ui.notify("The native tree selector is not available in this mode.", "warning");
 		return undefined;
 	}
@@ -608,7 +605,7 @@ async function runBlockingRangeCompression(
 		ctx.ui.notify("no current model is available for the range summary — nothing written", "error");
 		return false;
 	}
-	if (!ctx.ui.custom) return applyRangeCompressionPlan(pi, ctx, plan, summaryModel, instructions, deps);
+	if (ctx.mode !== "tui") return applyRangeCompressionPlan(pi, ctx, plan, summaryModel, instructions, deps);
 	const result = await ctx.ui.custom<boolean>(
 		(tui, theme, _keybindings, done) => {
 			const rangeDetails = `summary model ${summaryModel} · ${plan.selectedEntryIds.length} selected entries · ~${fmtTokens(plan.selectedEstTokens)} source tokens`;

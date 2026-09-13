@@ -1,11 +1,9 @@
 import { createHash } from "node:crypto";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { CTREE_DECISION } from "../protocol.ts";
 import { type SessionSnapshot, snapshotEntry, snapshotSession } from "../session.ts";
 import { estimateEntryTokens } from "./estimate.ts";
 import { serializeEntries } from "./serialize.ts";
-import type { SessionEntry } from "./types.ts";
-import { isCustomMessageEntry, isMessageEntry } from "./types.ts";
 
 export interface RangeCandidate {
 	id: string;
@@ -131,10 +129,10 @@ export function rangeCandidates(snapshot: SessionSnapshot): RangeCandidate[] {
 	let incompleteUserId: string | undefined;
 	for (let index = slice.length - 1; index >= 0; index--) {
 		const entry = slice[index];
-		if (!entry || !isMessageEntry(entry) || entry.message.role !== "user") continue;
+		if (!entry || entry.type !== "message" || entry.message.role !== "user") continue;
 		const hasAssistantAfter = slice
 			.slice(index + 1)
-			.some((later) => isMessageEntry(later) && later.message.role === "assistant");
+			.some((later) => later.type === "message" && later.message.role === "assistant");
 		if (!hasAssistantAfter) incompleteUserId = entry.id;
 		break;
 	}
@@ -144,14 +142,14 @@ export function rangeCandidates(snapshot: SessionSnapshot): RangeCandidate[] {
 		const entry = slice[index];
 		if (!entry) continue;
 
-		if (isMessageEntry(entry) && entry.message.role === "assistant") {
+		if (entry.type === "message" && entry.message.role === "assistant") {
 			const callIds = entry.message.content.filter((block) => block.type === "toolCall").map((block) => block.id);
 			if (callIds.length > 0) {
 				let endPathIndex = index;
 				const resultIds: string[] = [];
 				while (endPathIndex + 1 < slice.length) {
 					const next = slice[endPathIndex + 1];
-					if (!next || !isMessageEntry(next) || next.message.role !== "toolResult") break;
+					if (!next || next.type !== "message" || next.message.role !== "toolResult") break;
 					resultIds.push(next.message.toolCallId);
 					endPathIndex += 1;
 				}
@@ -179,16 +177,21 @@ export function rangeCandidates(snapshot: SessionSnapshot): RangeCandidate[] {
 		if (!entry.parentId) protectReason = "no anchor before this message group";
 		else if (metadataReason) protectReason = metadataReason;
 		else if (entry.id === incompleteUserId) protectReason = "incomplete current user turn";
-		else if (isCustomMessageEntry(entry) && entry.customType === CTREE_DECISION) protectReason = "decision record";
-		else if (isMessageEntry(entry) && entry.message.role === "custom" && entry.message.customType === CTREE_DECISION) {
+		else if (entry.type === "custom_message" && entry.customType === CTREE_DECISION) protectReason = "decision record";
+		else if (
+			entry.type === "message" &&
+			entry.message.role === "custom" &&
+			entry.message.customType === CTREE_DECISION
+		) {
 			protectReason = "decision record";
 		} else if (
 			entry.type === "branch_summary" ||
 			entry.type === "compaction" ||
-			(isMessageEntry(entry) && (entry.message.role === "branchSummary" || entry.message.role === "compactionSummary"))
+			(entry.type === "message" &&
+				(entry.message.role === "branchSummary" || entry.message.role === "compactionSummary"))
 		) {
 			protectReason = "structural context entry";
-		} else if (isMessageEntry(entry) && entry.message.role === "toolResult") {
+		} else if (entry.type === "message" && entry.message.role === "toolResult") {
 			protectReason = "tool result without its assistant tool call";
 		}
 		candidates.push(makeCandidate(slice, index, index, protectReason));

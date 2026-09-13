@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import type { Model } from "@earendil-works/pi-ai";
+import { type Model, contentText } from "@earendil-works/pi-ai";
 import type {
 	CustomEntry,
 	CustomMessageEntry,
@@ -10,8 +10,7 @@ import type {
 	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import parseArgs from "yargs-parser";
-import { serializeEntries, textOfContent } from "./core/serialize.ts";
-import { isCustomMessageEntry } from "./core/types.ts";
+import { serializeEntries } from "./core/serialize.ts";
 import { DRAFT_SYSTEM_PROMPT, type Deps, draftUserPrompt } from "./extension/draft.ts";
 import { refreshAmbient } from "./panel.ts";
 import {
@@ -130,7 +129,7 @@ export function nearestOpenFork(branch: readonly SessionEntry[], forks: ForkInfo
 
 export function decisionsOnPath(branch: readonly SessionEntry[]): CustomMessageEntry[] {
 	return branch.filter(
-		(entry): entry is CustomMessageEntry => isCustomMessageEntry(entry) && entry.customType === CTREE_DECISION,
+		(entry): entry is CustomMessageEntry => entry.type === "custom_message" && entry.customType === CTREE_DECISION,
 	);
 }
 
@@ -233,7 +232,7 @@ export function notifyDecisions(ctx: ExtensionContext): void {
 	}
 	const lines = [...decisions].reverse().map((decision) => {
 		const details = ctreeDecisionDetails(decision);
-		const text = textOfContent(decision.content);
+		const text = contentText(decision.content, "\n");
 		const outcome = text.split("\n").find((line) => line.startsWith("**Outcome:**")) ?? text.split("\n")[0] ?? "";
 		return `◆ ${details?.branchName ?? "decision"} (${decision.timestamp.slice(0, 10)}) ${outcome.replace("**Outcome:**", "").trim()}`;
 	});
@@ -243,7 +242,7 @@ export function notifyDecisions(ctx: ExtensionContext): void {
 export function exportDecisions(ctx: ExtensionContext, path: string | undefined): void {
 	const decisions = decisionsOnPath(ctx.sessionManager.getBranch());
 	const markdown = exportDecisionsMarkdown(
-		decisions.map((decision) => textOfContent(decision.content)),
+		decisions.map((decision) => contentText(decision.content, "\n")),
 		basename(ctx.cwd),
 	);
 	const outputPath = resolve(ctx.cwd, path || "ctree-decisions.md");

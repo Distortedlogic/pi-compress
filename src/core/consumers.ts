@@ -3,10 +3,9 @@
  * context slice lands in exactly one bucket so shares sum to 1.
  */
 
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { CTREE_CROP_TAIL, CTREE_DECISION, CTREE_RANGE_TAIL } from "../protocol.ts";
 import { estimateEntryTokens } from "./estimate.ts";
-import type { SessionEntry } from "./types.ts";
-import { isMessageEntry } from "./types.ts";
 
 export interface ConsumerRow {
 	key: string;
@@ -17,7 +16,7 @@ export interface ConsumerRow {
 }
 
 function bucketOf(e: SessionEntry): string {
-	if (isMessageEntry(e)) {
+	if (e.type === "message") {
 		const m = e.message;
 		switch (m.role) {
 			case "user":

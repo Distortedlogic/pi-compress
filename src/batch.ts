@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { contentText } from "@earendil-works/pi-ai";
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+	SessionEntry,
+	SessionMessageEntry,
+} from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 import {
 	type RewritePlan,
@@ -9,8 +16,6 @@ import {
 	rangeCandidates,
 	revalidateRewrite,
 } from "./core/range-rewrite.ts";
-import { textOfContent } from "./core/serialize.ts";
-import { type MessageEntry, isMessageEntry } from "./core/types.ts";
 import { draftRangeSummary, realDraft } from "./extension/draft.ts";
 import {
 	type BatchSnapshot,
@@ -43,22 +48,20 @@ interface Prepared {
 
 type Outcome = Pick<CompressionResult, "status" | "details" | "code">;
 
-type SessionEntry = ReturnType<ExtensionContext["sessionManager"]["getEntries"]>[number];
-
 function branch(ctx: ExtensionContext): SessionEntry[] {
 	return [...ctx.sessionManager.getBranch()];
 }
 
-function isQueuedTaskMessage(entry: SessionEntry): entry is SessionEntry & MessageEntry {
+function isQueuedTaskMessage(entry: SessionEntry): entry is SessionMessageEntry {
 	return (
-		isMessageEntry(entry) &&
+		entry.type === "message" &&
 		entry.message.role === "user" &&
-		textOfContent(entry.message.content).startsWith("[Queued task]\n\n")
+		contentText(entry.message.content, "\n").startsWith("[Queued task]\n\n")
 	);
 }
 
 function isAssistantMessage(entry: SessionEntry): boolean {
-	return isMessageEntry(entry) && entry.message.role === "assistant";
+	return entry.type === "message" && entry.message.role === "assistant";
 }
 
 export function prepareCompression(
@@ -97,7 +100,7 @@ export function prepareCompression(
 		operationId,
 		preTaskAnchorId: batchStartEntryId,
 		taskMessageEntryId: taskMessageEntry.id,
-		taskMessage: textOfContent(taskMessageEntry.message.content),
+		taskMessage: contentText(taskMessageEntry.message.content, "\n"),
 	};
 }
 

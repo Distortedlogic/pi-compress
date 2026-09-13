@@ -44,16 +44,16 @@
 
 ## Work unit 3 — Remove local replacements for Pi public APIs
 
-- [ ] Remove `src/core/types.ts`.
-- [ ] Import `SessionEntry`, `SessionMessageEntry`, and other session types directly from `@earendil-works/pi-coding-agent`.
-- [ ] Use the `type` discriminant directly for message and custom-message narrowing.
-- [ ] Remove `textOfContent` from `src/core/serialize.ts`.
-- [ ] Call Pi AI `contentText(content, '\n')` directly at each text extraction site.
-- [ ] Keep `snapshotSession` because it creates one immutable view from Pi's read-only session APIs.
-- [ ] Use `ctx.getContextUsage()` for the canonical total context value.
-- [ ] Keep local per-entry estimates only for range previews, crop previews, and consumer attribution because Pi does not expose a public per-entry estimator.
-- [ ] Replace checks for the existence of `ctx.ui.custom` with `ctx.mode === 'tui'` checks.
-- [ ] Keep all Pi imports on documented package entry points.
+- [x] Remove `src/core/types.ts`.
+- [x] Import `SessionEntry`, `SessionMessageEntry`, and other session types directly from `@earendil-works/pi-coding-agent`.
+- [x] Use the `type` discriminant directly for message and custom-message narrowing.
+- [x] Remove `textOfContent` from `src/core/serialize.ts`.
+- [x] Call Pi AI `contentText(content, '\n')` directly at each text extraction site.
+- [x] Keep `snapshotSession` because it creates one immutable view from Pi's read-only session APIs.
+- [x] Use `ctx.getContextUsage()` for the canonical total context value.
+- [x] Keep local per-entry estimates only for range previews, crop previews, and consumer attribution because Pi does not expose a public per-entry estimator.
+- [x] Replace checks for the existence of `ctx.ui.custom` with `ctx.mode === 'tui'` checks.
+- [x] Keep all Pi imports on documented package entry points.
 
 **Completion gate:** The extension has no thin type or text wrappers and no local implementation of behavior that Pi exposes publicly.
 

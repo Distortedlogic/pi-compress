@@ -4,8 +4,8 @@
  * IMAGE_CHARS mirrors pi's ESTIMATED_IMAGE_CHARS.
  */
 
-import type { AgentMessage, SessionEntry, UserContent } from "./types.ts";
-import { isMessageEntry } from "./types.ts";
+import type { UserMessage } from "@earendil-works/pi-ai";
+import type { SessionEntry, SessionMessageEntry } from "@earendil-works/pi-coding-agent";
 
 const CHARS_PER_TOKEN = 4;
 const IMAGE_CHARS = 4800;
@@ -14,7 +14,7 @@ export function estimateTextTokens(text: string): number {
 	return Math.ceil(text.length / CHARS_PER_TOKEN);
 }
 
-function contentChars(content: UserContent): number {
+function contentChars(content: UserMessage["content"]): number {
 	if (typeof content === "string") return content.length;
 	let chars = 0;
 	for (const block of content) {
@@ -24,7 +24,7 @@ function contentChars(content: UserContent): number {
 	return chars;
 }
 
-function messageChars(m: AgentMessage): number {
+function messageChars(m: SessionMessageEntry["message"]): number {
 	switch (m.role) {
 		case "user":
 			return contentChars(m.content);
@@ -54,14 +54,14 @@ function messageChars(m: AgentMessage): number {
 
 /** Characters this entry contributes to LLM context (0 for non-context entries). */
 function entryChars(e: SessionEntry): number {
-	if (isMessageEntry(e)) return messageChars(e.message);
+	if (e.type === "message") return messageChars(e.message);
 	switch (e.type) {
 		case "custom_message":
-			return contentChars((e as { content: UserContent }).content);
+			return contentChars(e.content);
 		case "branch_summary":
-			return (e as { summary: string }).summary.length;
+			return e.summary.length;
 		case "compaction":
-			return (e as { summary: string }).summary.length;
+			return e.summary.length;
 		default:
 			return 0;
 	}
@@ -69,12 +69,6 @@ function entryChars(e: SessionEntry): number {
 
 export function estimateEntryTokens(e: SessionEntry): number {
 	return Math.ceil(entryChars(e) / CHARS_PER_TOKEN);
-}
-
-export function estimateContextTokens(slice: readonly SessionEntry[]): number {
-	let total = 0;
-	for (const e of slice) total += estimateEntryTokens(e);
-	return total;
 }
 
 // ---------------------------------------------------------------------------

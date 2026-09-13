@@ -588,6 +588,7 @@ describe("ambient and panel behavior", () => {
 		const value = world();
 		value.session.user("root");
 		registerPanel(value.pi, deps);
+		(value.ctx as unknown as { mode: string }).mode = "print";
 		await value.commands.get("decisions")?.("", value.ctx);
 		expect(value.ui.notifications.at(-1)?.message).toContain("no decision records");
 		expect(value.shortcuts.has("ctrl+q")).toBe(true);

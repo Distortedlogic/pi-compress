@@ -1,8 +1,10 @@
 import { basename } from "node:path";
+import { contentText } from "@earendil-works/pi-ai";
 import {
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
+	type SessionEntry,
 	TreeSelectorComponent,
 	getMarkdownTheme,
 } from "@earendil-works/pi-coding-agent";
@@ -42,17 +44,8 @@ import {
 	planRemoveTurns,
 } from "./compression.ts";
 import { aggregateConsumers } from "./core/consumers.ts";
-import {
-	BAND_THRESHOLDS,
-	type Band,
-	band,
-	estimateContextTokens,
-	estimateEntryTokens,
-	fmtTokens,
-} from "./core/estimate.ts";
-import { serializeEntry, textOfContent } from "./core/serialize.ts";
-import type { SessionEntry } from "./core/types.ts";
-import { isMessageEntry } from "./core/types.ts";
+import { BAND_THRESHOLDS, type Band, band, estimateEntryTokens, fmtTokens } from "./core/estimate.ts";
+import { serializeEntry } from "./core/serialize.ts";
 import type { Deps } from "./extension/draft.ts";
 import {
 	CTREE_DECISION,
@@ -93,7 +86,7 @@ interface PanelHeader {
 	branchName: string;
 	model?: string;
 	view: PanelView;
-	tokens: number;
+	tokens: number | null;
 	window?: number;
 	pct?: number;
 	band?: Band;
@@ -160,10 +153,9 @@ function renderGauge(input: GaugeInput, theme: PiTheme): string {
 
 function panelHeader(input: PanelInput, view: PanelView): PanelHeader {
 	const currentFork = nearestOpenFork(input.branch, input.forks);
-	const hasUsage = typeof input.usageTokens === "number" && input.usageTokens > 0;
-	const tokens = hasUsage ? (input.usageTokens as number) : estimateContextTokens(input.contextEntries);
+	const tokens = input.usageTokens ?? null;
 	const window = input.contextWindow;
-	const pct = window && window > 0 ? (tokens / window) * 100 : undefined;
+	const pct = tokens !== null && window && window > 0 ? (tokens / window) * 100 : undefined;
 	return {
 		project: input.project,
 		sessionName: input.sessionName,
@@ -174,7 +166,7 @@ function panelHeader(input: PanelInput, view: PanelView): PanelHeader {
 		window,
 		pct,
 		band: pct === undefined ? undefined : band(pct),
-		estimated: !hasUsage,
+		estimated: false,
 		readOnly: input.readOnly ?? false,
 	};
 }
@@ -441,7 +433,7 @@ export class ContextPanel {
 			const details = ctreeDecisionDetails(decision);
 			const fork = details ? forks.get(details.forkEntryId) : undefined;
 			const model = fork?.data.branchModel ?? fork?.data.trunkModel ?? "—";
-			const text = textOfContent(decision.content);
+			const text = contentText(decision.content, "\n");
 			const outcome =
 				text
 					.split("\n")
@@ -488,7 +480,7 @@ export class ContextPanel {
 		if (!entry) return new Text("(nothing selected)", 0, 0);
 		const tokens = estimateEntryTokens(entry);
 		const tool =
-			isMessageEntry(entry) && entry.message.role === "toolResult" ? ` · tool ${entry.message.toolName}` : "";
+			entry.type === "message" && entry.message.role === "toolResult" ? ` · tool ${entry.message.toolName}` : "";
 		const meta = `id ${entry.id} · type ${entry.type}${tool} · ~${fmtTokens(tokens)} tokens (${(
 			tokens * 4
 		).toLocaleString("en-US")} chars) · parent ${entry.parentId ?? "—"}`;
@@ -752,7 +744,7 @@ export async function openPanel(
 	ctx: ExtensionContext,
 	opts: PanelOpenOptions = {},
 ): Promise<PanelAction | undefined> {
-	if (!ctx.ui.custom) {
+	if (ctx.mode !== "tui") {
 		ctx.ui.notify("the context panel needs pi's interactive TUI (ui.custom unavailable in this mode)", "warning");
 		return undefined;
 	}
@@ -847,7 +839,7 @@ export function registerPanel(pi: ExtensionAPI, deps: Deps): void {
 				exportDecisions(ctx, parsed.exportPath);
 				return;
 			}
-			if (!ctx.ui.custom) {
+			if (ctx.mode !== "tui") {
 				notifyDecisions(ctx);
 				return;
 			}
@@ -924,9 +916,6 @@ export function refreshAmbient(_pi: ExtensionAPI, ctx: ExtensionContext): void {
 		gaugeTokens = usage.tokens;
 		pct = usage.percent;
 		estimated = false;
-	} else if (slice && window && window > 0) {
-		gaugeTokens = estimateContextTokens(slice);
-		pct = (gaugeTokens / window) * 100;
 	}
 	const trend = pct !== null && consumers ? trendMarker(pct, estimated, consumers) : "";
 	let gaugeText = "ctx —";
@@ -961,7 +950,7 @@ export function registerAmbient(pi: ExtensionAPI): void {
 export function registerDecisionRenderer(pi: ExtensionAPI): void {
 	pi.registerMessageRenderer<CtreeDecisionDetails>(CTREE_DECISION, (message, options, theme) => {
 		const details = parseCtreeDecisionDetails(message.details);
-		const content = textOfContent(message.content);
+		const content = contentText(message.content, "\n");
 		const body = content.split("\n");
 		const container = new Container();
 		container.addChild(
