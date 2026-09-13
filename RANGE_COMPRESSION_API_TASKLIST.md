@@ -141,12 +141,12 @@
 
 ## Work unit 8 — Preserve the batch compatibility adapter
 
-- [ ] Keep `COMPRESSION_REQUEST`, `COMPRESSION_RESULT`, `COMPRESSION_ENTRY`, `QUEUED_TASK_TAIL`, `COMPRESSION_TAIL`, and `LEGACY_COMPRESSION_ENTRY` unchanged.
-- [ ] Keep `CompressionRequestSchema`, `CompressionResultSchema`, and `CompressionDetailsSchema` compatible.
-- [ ] Change `src/batch.ts` to import range planning, drafting, revalidation, and application from the shared range modules.
-- [ ] Keep batch-specific queued-task discovery, batch revision data, two-tail output, and marker details in `src/batch.ts`.
-- [ ] Remove every duplicate range-safety rule from `src/batch.ts`.
-- [ ] Keep prepare, status, apply, replay, cancel, conflict, busy, and session-change behavior unchanged.
+- [x] Keep `COMPRESSION_REQUEST`, `COMPRESSION_RESULT`, `COMPRESSION_ENTRY`, `QUEUED_TASK_TAIL`, `COMPRESSION_TAIL`, and `LEGACY_COMPRESSION_ENTRY` unchanged.
+- [x] Keep `CompressionRequestSchema`, `CompressionResultSchema`, and `CompressionDetailsSchema` compatible.
+- [x] Change `src/batch.ts` to import range planning, drafting, revalidation, and application from the shared range modules.
+- [x] Keep batch-specific queued-task discovery, batch revision data, two-tail output, and marker details in `src/batch.ts`.
+- [x] Remove every duplicate range-safety rule from `src/batch.ts`.
+- [x] Keep prepare, status, apply, replay, cancel, conflict, busy, and session-change behavior unchanged.
 
 **Completion gate:** Existing batch callers require no changes and execute through the same range core as `/compress` and the generic API.
 
