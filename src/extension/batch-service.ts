@@ -9,15 +9,10 @@ import {
 	type CompressionResult,
 	CompressionResultSchema,
 } from "../protocol.ts";
-import {
-	type CompressionPlan,
-	applyCompression,
-	compressionOnBranch,
-	prepareCompression,
-	revalidateCompression,
-} from "./batch-range.ts";
+import { type CompressionPlan, applyCompression, compressionOnBranch, prepareCompression } from "./batch-range.ts";
 import { draftRangeSummary } from "./draft.ts";
 import { realDraft } from "./draft.ts";
+import { revalidateRewrite } from "./rewrite.ts";
 
 interface Prepared {
 	request: CompressionRequest;
@@ -89,7 +84,7 @@ export function registerBatchCompression(pi: ExtensionAPI): void {
 			if (ctx.sessionManager.getSessionId() !== request.sessionId) {
 				return { status: "failed", code: "session_changed" };
 			}
-			revalidateCompression(ctx, plan);
+			revalidateRewrite(ctx, plan);
 			prepared.set(key, { request: structuredClone(request), plan, summary });
 			return { status: "prepared" };
 		}
@@ -101,8 +96,7 @@ export function registerBatchCompression(pi: ExtensionAPI): void {
 		}
 		mutating.add(request.sessionId);
 		try {
-			const plan = revalidateCompression(ctx, saved.plan);
-			const details = await applyCompression(pi, ctx, request.runId, request.batch, plan, saved.summary);
+			const details = await applyCompression(pi, ctx, request.runId, request.batch, saved.plan, saved.summary);
 			prepared.delete(key);
 			return { status: "applied", details };
 		} finally {

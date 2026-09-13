@@ -24,8 +24,9 @@ export interface RangeCandidate {
 	protectReason?: string;
 }
 
-/** Complete, immutable input for one append-only range compaction. */
-export interface RangePlan {
+/** Complete, immutable input for one append-only session rewrite. */
+export interface RewritePlan {
+	sessionId: string;
 	sourceLeafId: string;
 	anchorId: string;
 	startEntryId: string;
@@ -34,11 +35,19 @@ export interface RangePlan {
 	continuationEntryIds: string[];
 	selectedEntries: SessionEntry[];
 	continuationEntries: SessionEntry[];
-	selectedSerialized: string;
+	source: string;
 	continuationSerialized: string;
 	selectedEstTokens: number;
-	/** First eight hexadecimal characters of SHA-256(selectedSerialized). */
-	sourceSha8: string;
+	sourceSha256: string;
+}
+
+export interface PrepareRewriteOptions {
+	/** Use an earlier ancestor when replacement messages also reconstruct entries before the selected source. */
+	anchorId?: string;
+}
+
+export function sourceSha8(plan: RewritePlan): string {
+	return plan.sourceSha256.slice(0, 8);
 }
 
 function makeCandidate(
@@ -175,8 +184,13 @@ function endpointPosition(snapshot: SessionSnapshot, id: string): number {
 	return position;
 }
 
-/** Plan one normalized, continuous range without changing the session. */
-export function planRange(snapshot: SessionSnapshot, startId: string, endId: string): RangePlan {
+/** Prepare one normalized, continuous rewrite without changing the session. */
+export function prepareRewrite(
+	snapshot: SessionSnapshot,
+	startId: string,
+	endId: string,
+	options: PrepareRewriteOptions = {},
+): RewritePlan {
 	const sourceLeafId = snapshot.leafId;
 	if (!sourceLeafId || !snapshotEntry(snapshot, sourceLeafId)) {
 		throw new Error(`source leaf ${sourceLeafId ?? ""} was not found`);
@@ -209,12 +223,20 @@ export function planRange(snapshot: SessionSnapshot, startId: string, endId: str
 	const continuationEntries = slice.slice(lastGroup.endPathIndex + 1);
 	const firstEntry = selectedEntries[0];
 	if (!firstEntry) throw new Error("range is empty");
-	const anchorId = firstEntry.parentId;
+	const anchorId = options.anchorId ?? firstEntry.parentId;
 	if (!anchorId) throw new Error("range has no entry before it to use as an anchor");
-	const selectedSerialized = serializeEntries(selectedEntries);
+	if (!snapshotEntry(snapshot, anchorId)) throw new Error(`rewrite anchor ${anchorId} was not found`);
+	const anchorPosition = snapshot.branch.findIndex((entry) => entry.id === anchorId);
+	const startBranchPosition = snapshot.branch.findIndex((entry) => entry.id === firstEntry.id);
+	if (anchorPosition === -1 || startBranchPosition <= anchorPosition) {
+		throw new Error(`rewrite anchor ${anchorId} is not before the selected range`);
+	}
+	const source = serializeEntries(selectedEntries);
+	if (!source.trim()) throw new Error("selected range has no serializable source");
 	const continuationSerialized = serializeEntries(continuationEntries);
 
 	return {
+		sessionId: snapshot.sessionId,
 		sourceLeafId,
 		anchorId,
 		startEntryId: firstGroup.startEntryId,
@@ -223,20 +245,20 @@ export function planRange(snapshot: SessionSnapshot, startId: string, endId: str
 		continuationEntryIds: continuationEntries.map((entry) => entry.id),
 		selectedEntries,
 		continuationEntries,
-		selectedSerialized,
+		source,
 		continuationSerialized,
 		selectedEstTokens: selectedEntries.reduce((total, entry) => total + estimateEntryTokens(entry), 0),
-		sourceSha8: createHash("sha256").update(selectedSerialized).digest("hex").slice(0, 8),
+		sourceSha256: createHash("sha256").update(source).digest("hex"),
 	};
 }
 
 /** Render only the approved summary and the unchanged post-range continuation. */
-export function renderRangeTail(plan: RangePlan, approvedSummary: string): string {
+export function renderRangeTail(plan: RewritePlan, approvedSummary: string): string {
 	const summary = approvedSummary.trim();
 	if (!summary) throw new Error("approved range summary is empty");
 	const header = `[ctree/range-compact: summarized ${plan.selectedEntryIds.length} entries, ~${fmtTokens(
 		plan.selectedEstTokens,
-	)} tokens, source ${plan.sourceSha8}. Originals preserved at leaf ${plan.sourceLeafId}.]`;
+	)} tokens, source ${sourceSha8(plan)}. Originals preserved at leaf ${plan.sourceLeafId}.]`;
 	const parts = [header, summary];
 	if (plan.continuationSerialized.trim()) {
 		parts.push("[unchanged continuation after compressed range]", plan.continuationSerialized);

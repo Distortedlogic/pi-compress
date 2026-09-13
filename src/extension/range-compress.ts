@@ -8,17 +8,19 @@ import {
 	CTREE_RANGE_COMPACT,
 	CTREE_RANGE_TAIL,
 	type CtreeRangeCompactData,
-	type RangePlan,
+	type RewritePlan,
 	estimateTextTokens,
 	fmtTokens,
-	planRange,
+	prepareRewrite,
 	rangeCandidates,
 	renderRangeTail,
 	resolveRangeEndpoint,
 	serializeEntry,
+	sourceSha8,
 } from "../core/index.ts";
 import { refreshAmbient } from "./ambient.ts";
 import { type Deps, draftRangeSummary } from "./draft.ts";
+import { applyRewrite } from "./rewrite.ts";
 import { deriveState, modelKey } from "./state.ts";
 
 type RangePhase = "start" | "end";
@@ -70,7 +72,7 @@ export async function selectNativeEntry(
 }
 
 export function buildRangeCompactData(
-	plan: RangePlan,
+	plan: RewritePlan,
 	approvedSummary: string,
 	summaryModel: string,
 ): CtreeRangeCompactData {
@@ -86,7 +88,7 @@ export function buildRangeCompactData(
 		summaryEstTokens,
 		reclaimedEstTokens: plan.selectedEstTokens - summaryEstTokens,
 		summaryModel,
-		sourceSha8: plan.sourceSha8,
+		sourceSha8: sourceSha8(plan),
 	};
 }
 
@@ -94,7 +96,7 @@ export function buildRangeCompactData(
 export async function applyRangeCompressionPlan(
 	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
-	initialPlan: RangePlan,
+	initialPlan: RewritePlan,
 	summaryModel: string,
 	instructions: string | undefined,
 	deps: Deps,
@@ -104,7 +106,7 @@ export async function applyRangeCompressionPlan(
 	if (!progress) ctx.ui.notify(`drafting range summary with ${summaryModel}…`, "info");
 	let generatedSummary: string;
 	try {
-		generatedSummary = (await draftRangeSummary(deps.draft, ctx, initialPlan.selectedSerialized, instructions)).trim();
+		generatedSummary = (await draftRangeSummary(deps.draft, ctx, initialPlan.source, instructions)).trim();
 		if (!generatedSummary) throw new Error("model returned an empty range summary");
 	} catch (error) {
 		ctx.ui.notify(`range summary failed: ${(error as Error).message} (nothing written)`, "error");
@@ -112,55 +114,33 @@ export async function applyRangeCompressionPlan(
 	}
 
 	progress?.("Checking selected range");
-	await ctx.waitForIdle();
-	const freshState = deriveState(ctx);
-	if (!freshState.leafId || freshState.leafId !== initialPlan.sourceLeafId) {
-		ctx.ui.notify("session changed while drafting the summary — re-run /compress (nothing written)", "warning");
-		return false;
-	}
+	const details = buildRangeCompactData(initialPlan, generatedSummary, summaryModel);
+	const rebuilt = renderRangeTail(initialPlan, generatedSummary);
 
-	let plan: RangePlan;
+	progress?.("Applying compression");
 	try {
-		plan = planRange(freshState, initialPlan.startEntryId, initialPlan.endEntryId);
+		const result = await applyRewrite(pi, ctx, initialPlan, {
+			messages: [
+				{
+					customType: CTREE_RANGE_TAIL,
+					content: rebuilt,
+					display: true,
+					details,
+				},
+			],
+			marker: { customType: CTREE_RANGE_COMPACT, data: details },
+		});
+		if (!result.applied) {
+			ctx.ui.notify("range compression cancelled during navigation — nothing written", "warning");
+			return false;
+		}
 	} catch (error) {
 		ctx.ui.notify(`selected range is no longer valid: ${(error as Error).message} (nothing written)`, "warning");
 		return false;
 	}
-	const sameSelectedIds =
-		plan.selectedEntryIds.length === initialPlan.selectedEntryIds.length &&
-		plan.selectedEntryIds.every((id, index) => id === initialPlan.selectedEntryIds[index]);
-	if (!sameSelectedIds || plan.sourceSha8 !== initialPlan.sourceSha8) {
-		ctx.ui.notify("selected range changed during summary review — re-run /compress (nothing written)", "warning");
-		return false;
-	}
-
-	const details = buildRangeCompactData(plan, generatedSummary, summaryModel);
-	const rebuilt = renderRangeTail(plan, generatedSummary);
-
-	progress?.("Applying compression");
-	if (ctx.sessionManager.getLeafId() !== plan.sourceLeafId) {
-		ctx.ui.notify("session changed before range compression was applied — nothing written", "warning");
-		return false;
-	}
-	const navigation = await ctx.navigateTree(plan.anchorId, { summarize: false });
-	if (navigation.cancelled) {
-		ctx.ui.notify("range compression cancelled during navigation — nothing written", "warning");
-		return false;
-	}
-
-	pi.sendMessage(
-		{
-			customType: CTREE_RANGE_TAIL,
-			content: rebuilt,
-			display: true,
-			details,
-		},
-		{ triggerTurn: false },
-	);
-	pi.appendEntry(CTREE_RANGE_COMPACT, details);
 	refreshAmbient(pi, ctx);
 	ctx.ui.notify(
-		`compressed range: selected ~${fmtTokens(plan.selectedEstTokens)} · summary ~${fmtTokens(details.summaryEstTokens)} · reclaimed ~${fmtTokens(details.reclaimedEstTokens)} tokens · originals kept at ${plan.sourceLeafId}`,
+		`compressed range: selected ~${fmtTokens(initialPlan.selectedEstTokens)} · summary ~${fmtTokens(details.summaryEstTokens)} · reclaimed ~${fmtTokens(details.reclaimedEstTokens)} tokens · originals kept at ${initialPlan.sourceLeafId}`,
 		"info",
 	);
 	return true;
@@ -170,7 +150,7 @@ export async function applyRangeCompressionPlan(
 export async function runBlockingRangeCompression(
 	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
-	plan: RangePlan,
+	plan: RewritePlan,
 	instructions: string | undefined,
 	deps: Deps,
 ): Promise<boolean> {
@@ -275,9 +255,9 @@ export async function rangeCompressHandler(
 			continue;
 		}
 
-		let plan: RangePlan;
+		let plan: RewritePlan;
 		try {
-			plan = planRange(state, firstEntryId, endpoint.entryId);
+			plan = prepareRewrite(state, firstEntryId, endpoint.entryId);
 		} catch (error) {
 			ctx.ui.notify(`Invalid range: ${(error as Error).message}. Select another last entry.`, "warning");
 			secondInitialId = selectedEntryId;

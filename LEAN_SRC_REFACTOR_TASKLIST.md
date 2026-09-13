@@ -164,27 +164,27 @@ src/
 
 **Depends on:** WU-04
 
-- [ ] Define one internal rewrite plan with:
-  - [ ] Source leaf ID and anchor ID.
-  - [ ] Ordered selected entry IDs.
-  - [ ] Ordered continuation entry IDs.
-  - [ ] Complete serialized source.
-  - [ ] Full SHA-256 source hash; derive an eight-character value only for display compatibility.
-- [ ] Keep an assistant tool call and all matching contiguous tool results in one atomic range group.
-- [ ] Reject a root range, an incomplete current turn, structural summaries, decision records, incomplete tool groups, and orphan tool results.
-- [ ] Implement one preparation function and one revalidation function.
-- [ ] Implement one apply operation with this order:
-  1. [ ] Wait for idle.
-  2. [ ] Check session ID, source leaf, selected IDs, and source hash.
-  3. [ ] Navigate to the anchor with `summarize: false`.
-  4. [ ] Append replacement custom messages in required order with `triggerTurn: false`.
-  5. [ ] Append the operation marker last.
-- [ ] Return before the first write on every validation or review failure.
-- [ ] Keep operation-specific details outside the shared engine.
+- [x] Define one internal rewrite plan with:
+  - [x] Source leaf ID and anchor ID.
+  - [x] Ordered selected entry IDs.
+  - [x] Ordered continuation entry IDs.
+  - [x] Complete serialized source.
+  - [x] Full SHA-256 source hash; derive an eight-character value only for display compatibility.
+- [x] Keep an assistant tool call and all matching contiguous tool results in one atomic range group.
+- [x] Reject a root range, an incomplete current turn, structural summaries, decision records, incomplete tool groups, and orphan tool results.
+- [x] Implement one preparation function and one revalidation function.
+- [x] Implement one apply operation with this order:
+  1. [x] Wait for idle.
+  2. [x] Check session ID, source leaf, selected IDs, and source hash.
+  3. [x] Navigate to the anchor with `summarize: false`.
+  4. [x] Append replacement custom messages in required order with `triggerTurn: false`.
+  5. [x] Append the operation marker last.
+- [x] Return before the first write on every validation or review failure.
+- [x] Keep operation-specific details outside the shared engine.
 
 **Gate**
 
-- [ ] Crop, selected-range compression, and batch compression can use the same plan, validation, and apply rules.
+- [x] Crop, selected-range compression, and batch compression can use the same plan, validation, and apply rules.
 
 ### WU-06 — Consolidate branch and decision features
 

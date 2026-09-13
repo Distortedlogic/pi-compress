@@ -12,6 +12,7 @@ import type { CtreeCropDrop, CtreeCropStub } from "../protocol.ts";
 import type { SessionSnapshot } from "../session.ts";
 import { snapshotEntry } from "../session.ts";
 import { estimateEntryTokens, fmtTokens } from "./estimate.ts";
+import { type RewritePlan, candidateByEntryId, prepareRewrite, rangeCandidates } from "./range-compress.ts";
 import { serializeEntry, textOfContent } from "./serialize.ts";
 import type { AgentMessage, MessageEntry, SessionEntry } from "./types.ts";
 import { isMessageEntry } from "./types.ts";
@@ -34,15 +35,12 @@ export interface AutoRules {
 	keep?: string[];
 }
 
-export interface CropPlan {
+export interface CropPlan extends RewritePlan {
 	marked: string[];
-	/** parent of the earliest affected entry (stub or drop) — the new branch point */
-	anchorId: string | null;
 	reclaimTokens: number;
 	stubs: CtreeCropStub[];
-	/** whole Q&A turns removed together (question + answers). Empty for plain crops. */
+	/** Whole Q&A turns removed together. Empty for result crops. */
 	dropped: CtreeCropDrop[];
-	sourceLeafId: string;
 }
 
 /** A user question grouped with the answers it spawned, up to the next question. */
@@ -152,10 +150,7 @@ export function autoSelect(candidates: CropCandidate[], rules: AutoRules): strin
 }
 
 export function planCrop(snapshot: SessionSnapshot, markedIds: string[]): CropPlan {
-	const sourceLeafId = snapshot.leafId;
-	if (!sourceLeafId) throw new Error("session has no leaf");
-	const slice = snapshot.contextEntries;
-	const position = new Map(slice.map((entry, index) => [entry.id, index]));
+	const position = new Map(snapshot.contextEntries.map((entry, index) => [entry.id, index]));
 	const croppable = new Set(cropCandidates(snapshot).map((candidate) => candidate.entryId));
 
 	for (const id of markedIds) {
@@ -165,7 +160,14 @@ export function planCrop(snapshot: SessionSnapshot, markedIds: string[]): CropPl
 
 	const ordered = [...markedIds].sort((a, b) => (position.get(a) ?? 0) - (position.get(b) ?? 0));
 	const earliest = ordered[0];
-	if (!earliest) throw new Error("nothing marked");
+	const latest = ordered.at(-1);
+	if (!earliest || !latest) throw new Error("nothing marked");
+
+	const groupsByEntryId = candidateByEntryId(rangeCandidates(snapshot));
+	const firstGroup = groupsByEntryId.get(earliest);
+	const lastGroup = groupsByEntryId.get(latest);
+	if (!firstGroup || !lastGroup) throw new Error("marked crop entry is not in a safe rewrite group");
+	const rewrite = prepareRewrite(snapshot, firstGroup.startEntryId, lastGroup.endEntryId);
 
 	const stubs: CtreeCropStub[] = ordered.map((id) => {
 		const entry = snapshotEntry(snapshot, id) as MessageEntry;
@@ -183,12 +185,11 @@ export function planCrop(snapshot: SessionSnapshot, markedIds: string[]): CropPl
 	});
 
 	return {
+		...rewrite,
 		marked: ordered,
-		anchorId: snapshotEntry(snapshot, earliest)?.parentId ?? null,
 		reclaimTokens: stubs.reduce((sum, stub) => sum + stub.estTokens, 0),
 		stubs,
 		dropped: [],
-		sourceLeafId,
 	};
 }
 
@@ -224,8 +225,6 @@ export function contextTurns(snapshot: SessionSnapshot): ContextTurn[] {
  * omits the turns, originals stay recoverable (G4).
  */
 export function planRemoveTurns(snapshot: SessionSnapshot, userIds: string[]): CropPlan {
-	const sourceLeafId = snapshot.leafId;
-	if (!sourceLeafId) throw new Error("session has no leaf");
 	const position = new Map(snapshot.contextEntries.map((entry, index) => [entry.id, index]));
 	const byUser = new Map(contextTurns(snapshot).map((turn) => [turn.userId, turn]));
 
@@ -233,8 +232,17 @@ export function planRemoveTurns(snapshot: SessionSnapshot, userIds: string[]): C
 		if (!byUser.has(id)) throw new Error(`entry ${id} is not a user question (only whole turns can be removed)`);
 	}
 	const ordered = [...userIds].sort((a, b) => (position.get(a) ?? 0) - (position.get(b) ?? 0));
-	const earliest = ordered[0];
-	if (!earliest) throw new Error("nothing marked");
+	const firstTurn = ordered[0] ? byUser.get(ordered[0]) : undefined;
+	const lastTurn = ordered.at(-1) ? byUser.get(ordered.at(-1) as string) : undefined;
+	const firstEntryId = firstTurn?.entryIds[0];
+	const lastEntryId = lastTurn?.entryIds.at(-1);
+	if (!firstEntryId || !lastEntryId) throw new Error("nothing marked");
+
+	const groupsByEntryId = candidateByEntryId(rangeCandidates(snapshot));
+	const firstGroup = groupsByEntryId.get(firstEntryId);
+	const lastGroup = groupsByEntryId.get(lastEntryId);
+	if (!firstGroup || !lastGroup) throw new Error("marked turn is not in a safe rewrite group");
+	const rewrite = prepareRewrite(snapshot, firstGroup.startEntryId, lastGroup.endEntryId);
 
 	const dropped: CtreeCropDrop[] = ordered.map((userId) => {
 		const turn = byUser.get(userId) as ContextTurn;
@@ -251,12 +259,11 @@ export function planRemoveTurns(snapshot: SessionSnapshot, userIds: string[]): C
 	});
 
 	return {
+		...rewrite,
 		marked: [],
-		anchorId: snapshotEntry(snapshot, earliest)?.parentId ?? null,
 		reclaimTokens: dropped.reduce((sum, drop) => sum + drop.estTokens, 0),
 		stubs: [],
 		dropped,
-		sourceLeafId,
 	};
 }
 
@@ -280,16 +287,10 @@ export function dropLine(d: CtreeCropDrop): string {
  * point. Everything after the anchor, in order: tool results stubbed, whole
  * removed turns collapsed to a drop note, everything else kept verbatim.
  */
-export function renderReconstruction(snapshot: SessionSnapshot, plan: CropPlan): string {
-	const slice = snapshot.contextEntries;
-	const stubbed = new Map(plan.stubs.map((s) => [s.entryId, s]));
-	const dropFirst = new Map(plan.dropped.map((d) => [d.entryIds[0] as string, d]));
-	const droppedIds = new Set(plan.dropped.flatMap((d) => d.entryIds));
-
-	const affected = [...plan.marked, ...droppedIds];
-	const positions = affected.map((id) => slice.findIndex((e) => e.id === id)).filter((i) => i >= 0);
-	const startIdx = positions.length ? Math.min(...positions) : 0;
-	const tail = slice.slice(startIdx);
+export function renderReconstruction(plan: CropPlan): string {
+	const stubbed = new Map(plan.stubs.map((stub) => [stub.entryId, stub]));
+	const dropFirst = new Map(plan.dropped.map((drop) => [drop.entryIds[0] as string, drop]));
+	const droppedIds = new Set(plan.dropped.flatMap((drop) => drop.entryIds));
 
 	const header =
 		plan.dropped.length === 0
@@ -307,7 +308,7 @@ export function renderReconstruction(snapshot: SessionSnapshot, plan: CropPlan):
 				)} tokens reclaimed. Originals preserved on the previous branch (leaf ${plan.sourceLeafId}).]`;
 
 	const parts: string[] = [];
-	for (const e of tail) {
+	for (const e of plan.selectedEntries) {
 		const drop = dropFirst.get(e.id);
 		if (drop) {
 			parts.push(dropLine(drop));
@@ -317,6 +318,7 @@ export function renderReconstruction(snapshot: SessionSnapshot, plan: CropPlan):
 		const stub = stubbed.get(e.id);
 		parts.push(stub ? stubLine(stub) : (serializeEntry(e) ?? ""));
 	}
+	if (plan.continuationSerialized.trim()) parts.push(plan.continuationSerialized);
 
 	return `${header}\n\n${parts.filter(Boolean).join("\n\n")}\n`;
 }

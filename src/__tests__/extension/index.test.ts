@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type ExtensionAPI, type ExtensionCommandContext, createEventBus } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
-import { planRange } from "../../core/index.ts";
+import { prepareRewrite } from "../../core/index.ts";
 import { registerBatchCompression } from "../../extension/batch-service.ts";
 import { applyRangeCompressionPlan } from "../../extension/range-compress.ts";
 import { undoHandler } from "../../extension/undo.ts";
@@ -203,6 +203,14 @@ describe("independent compression interface", () => {
 		expect(applied.details?.preCompletionBitmap).toEqual([false]);
 		const after = world.session.entries.length;
 		expect(after).toBe(before + 3);
+		const appended = world.session.entries.slice(before);
+		expect(appended.map((entry) => ("customType" in entry ? entry.customType : undefined))).toEqual([
+			QUEUED_TASK_TAIL,
+			COMPRESSION_TAIL,
+			COMPRESSION_ENTRY,
+		]);
+		expect(appended[1]?.parentId).toBe(appended[0]?.id);
+		expect(appended[2]?.parentId).toBe(appended[1]?.id);
 		expect((await world.request("apply")).status).toBe("applied");
 		expect(world.session.entries).toHaveLength(after);
 		await undoHandler(world.api, world.ctx);
@@ -239,7 +247,7 @@ describe("independent compression interface", () => {
 		const world = makeFake();
 		world.session.user("Keep the source context.");
 		const entryId = world.session.assistant("Compress this execution.");
-		const plan = planRange(snapshotSession(world.session.manager), entryId, entryId);
+		const plan = prepareRewrite(snapshotSession(world.session.manager), entryId, entryId);
 		world.ui.editorQueue.push("Do not open the editor.");
 		const applied = await applyRangeCompressionPlan(world.pi, world.ctx, plan, "test/model", undefined, {
 			draft: async () => "Generated summary.",

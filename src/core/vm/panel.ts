@@ -39,6 +39,7 @@ import { isCustomMessageEntry, isMessageEntry } from "../types.ts";
 export type PanelView = "tree" | "crop" | "consumers" | "decisions" | "inspect";
 
 export interface PanelInput {
+	sessionId: string;
 	entries: SessionEntry[];
 	branch: SessionEntry[];
 	contextEntries: SessionEntry[];
@@ -146,6 +147,7 @@ export class PanelVm {
 		this.leafId = input.leafId ?? "";
 		this.forks = input.forks;
 		this.snapshot = {
+			sessionId: input.sessionId,
 			entries: input.entries,
 			branch: input.branch,
 			contextEntries: input.contextEntries,

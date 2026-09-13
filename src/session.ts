@@ -3,6 +3,7 @@ import type { ExtensionContext, SessionEntry, SessionTreeNode } from "@earendil-
 export type SessionManagerView = ExtensionContext["sessionManager"];
 
 export interface SessionSnapshot {
+	sessionId: string;
 	entries: SessionEntry[];
 	branch: SessionEntry[];
 	contextEntries: SessionEntry[];
@@ -12,6 +13,7 @@ export interface SessionSnapshot {
 
 export function snapshotSession(session: SessionManagerView): SessionSnapshot {
 	return {
+		sessionId: session.getSessionId(),
 		entries: structuredClone(session.getEntries()),
 		branch: structuredClone(session.getBranch()),
 		contextEntries: structuredClone(session.buildContextEntries()),

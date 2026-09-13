@@ -13,7 +13,7 @@ import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { planRange, renderRangeTail } from "../../../core/index.ts";
+import { prepareRewrite, renderRangeTail } from "../../../core/index.ts";
 import { buildRangeCompactData } from "../../../extension/range-compress.ts";
 import { snapshotSession } from "../../../session.ts";
 import { PiSessionFixture } from "../../session-fixture.ts";
@@ -305,7 +305,7 @@ describe.skipIf(!PI)("rpc goldens", () => {
 				});
 				const original = b.build();
 				originalText = original.text;
-				const plan = planRange(snapshotSession(b.session), start, end);
+				const plan = prepareRewrite(snapshotSession(b.session), start, end);
 				selectedIds = [...plan.selectedEntryIds];
 				const summary = "Approved summary: cache invalidation failed because a stale key survived.";
 				const details = buildRangeCompactData(plan, summary, "mock/trunk-1");

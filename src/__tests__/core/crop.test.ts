@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { autoSelect, cropCandidates, planCrop, renderReconstruction, stubLine } from "../../core/crop.ts";
 import {
 	candidateByEntryId,
-	planRange,
+	prepareRewrite,
 	rangeCandidates,
 	renderRangeTail,
 	resolveRangeEndpoint,
+	sourceSha8,
 } from "../../core/range-compress.ts";
 import { snapshotEntry, snapshotSession } from "../../session.ts";
 import { PiSessionFixture, filler } from "../session-fixture.ts";
@@ -62,11 +63,13 @@ describe("autoSelect", () => {
 });
 
 describe("planCrop", () => {
-	it("anchors at the parent of the earliest marked entry and computes stubs", () => {
+	it("anchors before the earliest atomic tool group and computes stubs", () => {
 		const { tree, ids } = scenario();
 		const plan = planCrop(tree, [ids.snap1, ids.snap2]);
+		const firstToolCallId = snapshotEntry(tree, ids.snap1)?.parentId;
 
-		expect(plan.anchorId).toBe(snapshotEntry(tree, ids.snap1)?.parentId);
+		expect(plan.startEntryId).toBe(firstToolCallId);
+		expect(plan.anchorId).toBe(snapshotEntry(tree, firstToolCallId!)?.parentId);
 		expect(plan.reclaimTokens).toBe(20_000 + 16_000);
 		expect(plan.stubs).toHaveLength(2);
 		const stub = plan.stubs[0];
@@ -88,7 +91,7 @@ describe("renderReconstruction", () => {
 	it("keeps unmarked content, stubs marked bodies, preserves order", () => {
 		const { tree, ids } = scenario();
 		const plan = planCrop(tree, [ids.snap1, ids.snap2]);
-		const text = renderReconstruction(tree, plan);
+		const text = renderReconstruction(plan);
 
 		expect(text).toContain("[cropped: chrome.snapshot tab-audit");
 		expect(text).toContain("[cropped: chrome.snapshot post-suspend");
@@ -130,25 +133,25 @@ function rangeScenario() {
 describe("range compression planning", () => {
 	it("plans a valid range in source order", () => {
 		const { tree, ids } = rangeScenario();
-		const plan = planRange(tree, ids.start, ids.end);
+		const plan = prepareRewrite(tree, ids.start, ids.end);
 
 		expect(plan.anchorId).toBe(ids.anchor);
 		expect(plan.startEntryId).toBe(ids.start);
 		expect(plan.endEntryId).toBe(ids.end);
 		expect(plan.selectedEntryIds).toEqual([ids.start, ids.end]);
 		expect(plan.selectedEstTokens).toBeGreaterThan(0);
-		expect(plan.selectedSerialized).toContain("selected source alpha");
-		expect(plan.selectedSerialized).toContain("selected source omega");
+		expect(plan.source).toContain("selected source alpha");
+		expect(plan.source).toContain("selected source omega");
 	});
 
 	it("requires normalized group boundary IDs", () => {
 		const { tree, ids } = rangeScenario();
-		expect(() => planRange(tree, ids.end, ids.start)).toThrow(/not normalized/);
+		expect(() => prepareRewrite(tree, ids.end, ids.start)).toThrow(/not normalized/);
 	});
 
 	it("supports a range that reaches the current leaf", () => {
 		const { tree, ids } = rangeScenario();
-		const plan = planRange(tree, ids.start, ids.leaf);
+		const plan = prepareRewrite(tree, ids.start, ids.leaf);
 		expect(plan.endEntryId).toBe(ids.leaf);
 		expect(plan.continuationEntryIds).toEqual([]);
 		expect(plan.continuationSerialized).toBe("");
@@ -156,7 +159,7 @@ describe("range compression planning", () => {
 
 	it("keeps the post-range continuation in source order", () => {
 		const { tree, ids } = rangeScenario();
-		const plan = planRange(tree, ids.start, ids.end);
+		const plan = prepareRewrite(tree, ids.start, ids.end);
 		expect(plan.continuationEntryIds).toEqual([ids.continuation, ids.leaf]);
 		expect(plan.continuationSerialized.indexOf("continuation question")).toBeLessThan(
 			plan.continuationSerialized.indexOf("continuation answer"),
@@ -166,8 +169,8 @@ describe("range compression planning", () => {
 	it("rejects missing and off-path IDs", () => {
 		const { tree, ids } = rangeScenario();
 		const candidates = rangeCandidates(tree);
-		expect(() => planRange(tree, "missing", ids.end)).toThrow(/not found/);
-		expect(() => planRange(tree, ids.offPath, ids.end)).toThrow(/active context path/);
+		expect(() => prepareRewrite(tree, "missing", ids.end)).toThrow(/not found/);
+		expect(() => prepareRewrite(tree, ids.offPath, ids.end)).toThrow(/active context path/);
 		expect(resolveRangeEndpoint(candidates, ids.offPath, "start")).toEqual({
 			ok: false,
 			reason: "entry is not in the active context",
@@ -192,7 +195,7 @@ describe("range compression planning", () => {
 			ok: false,
 			reason: "decision record",
 		});
-		expect(() => planRange(tree, decision, decision)).toThrow(/protected: decision record/);
+		expect(() => prepareRewrite(tree, decision, decision)).toThrow(/protected: decision record/);
 	});
 
 	it("protects an incomplete current user turn", () => {
@@ -205,7 +208,7 @@ describe("range compression planning", () => {
 
 		expect(candidate?.protected).toBe(true);
 		expect(candidate?.protectReason).toBe("incomplete current user turn");
-		expect(() => planRange(tree, current, current)).toThrow(/incomplete current user turn/);
+		expect(() => prepareRewrite(tree, current, current)).toThrow(/incomplete current user turn/);
 	});
 
 	it("keeps an assistant tool call and its result in one safe group", () => {
@@ -228,22 +231,63 @@ describe("range compression planning", () => {
 		expect(byEntryId.get(result)).toBe(candidate);
 		expect(resolveRangeEndpoint(candidates, result, "start")).toEqual({ ok: true, entryId: callId });
 		expect(resolveRangeEndpoint(candidates, callId, "end")).toEqual({ ok: true, entryId: result });
-		expect(planRange(tree, callId, result).selectedEntryIds).toEqual([callId, result]);
-		expect(() => planRange(tree, result, result)).toThrow(/range start.*split/);
-		expect(() => planRange(tree, callId, callId)).toThrow(/range end.*split/);
+		expect(prepareRewrite(tree, callId, result).selectedEntryIds).toEqual([callId, result]);
+		expect(() => prepareRewrite(tree, result, result)).toThrow(/range start.*split/);
+		expect(() => prepareRewrite(tree, callId, callId)).toThrow(/range end.*split/);
+	});
+
+	it("rejects root, structural, incomplete-tool, and orphan-result ranges", () => {
+		const rootFixture = new PiSessionFixture();
+		const root = rootFixture.user("root");
+		rootFixture.assistant("answer");
+		expect(() => prepareRewrite(snapshotSession(rootFixture.session), root, root)).toThrow(/no anchor/);
+
+		const structuralFixture = new PiSessionFixture();
+		structuralFixture.user("old");
+		const kept = structuralFixture.user("kept");
+		structuralFixture.assistant("answer");
+		const compaction = structuralFixture.compaction("summary", kept, 100);
+		expect(() => prepareRewrite(snapshotSession(structuralFixture.session), compaction, compaction)).toThrow(
+			/structural context entry/,
+		);
+
+		const incompleteFixture = new PiSessionFixture();
+		incompleteFixture.user("root");
+		const incomplete = incompleteFixture.assistant("", {
+			toolCalls: [{ type: "toolCall", id: "incomplete", name: "read", arguments: {} }],
+		});
+		incompleteFixture.assistant("continued without a result");
+		expect(() => prepareRewrite(snapshotSession(incompleteFixture.session), incomplete, incomplete)).toThrow(
+			/incomplete assistant tool-call group/,
+		);
+
+		const orphanFixture = new PiSessionFixture();
+		orphanFixture.user("root");
+		const orphan = orphanFixture.message({
+			role: "toolResult",
+			toolCallId: "missing",
+			toolName: "read",
+			content: [{ type: "text", text: "body" }],
+			isError: false,
+		});
+		orphanFixture.assistant("continued");
+		expect(() => prepareRewrite(snapshotSession(orphanFixture.session), orphan, orphan)).toThrow(
+			/tool result without its assistant tool call/,
+		);
 	});
 
 	it("computes a stable selected-source hash", () => {
 		const { tree, ids } = rangeScenario();
-		const first = planRange(tree, ids.start, ids.end);
-		const second = planRange(tree, ids.start, ids.end);
-		expect(first.sourceSha8).toMatch(/^[0-9a-f]{8}$/);
-		expect(second.sourceSha8).toBe(first.sourceSha8);
+		const first = prepareRewrite(tree, ids.start, ids.end);
+		const second = prepareRewrite(tree, ids.start, ids.end);
+		expect(first.sourceSha256).toMatch(/^[0-9a-f]{64}$/);
+		expect(second.sourceSha256).toBe(first.sourceSha256);
+		expect(sourceSha8(first)).toMatch(/^[0-9a-f]{8}$/);
 	});
 
 	it("renders the approved summary and continuation without selected source text", () => {
 		const { tree, ids } = rangeScenario();
-		const plan = planRange(tree, ids.start, ids.end);
+		const plan = prepareRewrite(tree, ids.start, ids.end);
 		const rebuilt = renderRangeTail(plan, "Approved compact summary");
 
 		expect(rebuilt).toContain("Approved compact summary");

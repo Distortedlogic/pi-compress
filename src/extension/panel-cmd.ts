@@ -33,6 +33,7 @@ export function buildPanelInput(pi: ExtensionAPI, ctx: ExtensionContext, opts: P
 	const usage = ctx.getContextUsage();
 	const state = deriveState(ctx);
 	return {
+		sessionId: state.sessionId,
 		entries: state.entries,
 		branch: state.branch,
 		contextEntries: state.contextEntries,

@@ -92,7 +92,7 @@ describe("renderReconstruction with dropped turns", () => {
 	it("omits the whole turn, leaves a recoverable drop note, keeps later turns verbatim", () => {
 		const { tree, ids } = scenario();
 		const plan = planRemoveTurns(tree, [ids.u2]);
-		const text = renderReconstruction(tree, plan);
+		const text = renderReconstruction(plan);
 
 		// the removed turn is gone entirely — question text NOT echoed back into context
 		expect(text).not.toContain("now suspend the noisy ones");
@@ -107,14 +107,20 @@ describe("renderReconstruction with dropped turns", () => {
 		expect(text).toContain("you're welcome");
 	});
 
-	it("removes several turns and keeps the survivor in order", () => {
+	it("rejects a rewrite that starts at the root turn", () => {
 		const { tree, ids } = scenario();
-		const plan = planRemoveTurns(tree, [ids.u1, ids.u3]);
-		const text = renderReconstruction(tree, plan);
-		expect(text).not.toContain("found storage layer"); // u1's answer gone
-		expect(text).not.toContain("you're welcome"); // u3's answer gone
-		expect(text).toContain("now suspend the noisy ones"); // the un-removed middle turn stays live
-		expect(text).toContain("done, 41 tabs suspended");
+		expect(() => planRemoveTurns(tree, [ids.u1])).toThrow(/no anchor/);
+	});
+
+	it("removes several non-root turns and keeps the survivor before the anchor", () => {
+		const { tree, ids } = scenario();
+		const plan = planRemoveTurns(tree, [ids.u2, ids.u3]);
+		const text = renderReconstruction(plan);
+		expect(plan.anchorId).toBe(ids.a1);
+		expect(text).not.toContain("found storage layer");
+		expect(text).not.toContain("now suspend the noisy ones");
+		expect(text).not.toContain("done, 41 tabs suspended");
+		expect(text).not.toContain("you're welcome");
 		expect((text.match(/\[dropped turn —/g) ?? []).length).toBe(2);
 	});
 });

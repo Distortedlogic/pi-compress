@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { cropCandidates, planCrop, planRange, planRemoveTurns } from "../../core/index.ts";
+import { type CropPlan, cropCandidates, planCrop, planRemoveTurns, prepareRewrite } from "../../core/index.ts";
 import { applyCropPlan, cropHandler, parseCropFlags } from "../../extension/crop-cmd.ts";
 import { rangeCompressHandler, runBlockingRangeCompression } from "../../extension/range-compress.ts";
 import { snapshotSession } from "../../session.ts";
@@ -42,7 +42,7 @@ function seedRangeSession(w: FakeWorld) {
 	const end = w.session.assistant("selected source answer");
 	const continuation = w.session.user("continuation question");
 	const leaf = w.session.assistant("continuation answer");
-	const plan = planRange(snapshotSession(w.session.manager), start, end);
+	const plan = prepareRewrite(snapshotSession(w.session.manager), start, end);
 	return { plan, ids: { anchor, start, end, continuation, leaf } };
 }
 
@@ -235,6 +235,25 @@ describe("applyCropPlan", () => {
 		expect(w.calls.navigate).toHaveLength(0);
 		expect(entriesByType(w.session, "custom_message", "ctree/crop-tail")).toHaveLength(0);
 		expect(w.ui.notes().some((n) => n.includes("re-run /crop"))).toBe(true);
+	});
+
+	it("rejects changed rewrite identity, ids, and hash before mutation", async () => {
+		const w = makeFake();
+		const { snap1 } = seedBigSession(w);
+		const plan = planCrop(snapshotSession(w.session.manager), [snap1]);
+		const before = w.session.entries.length;
+		const changedPlans: CropPlan[] = [
+			{ ...plan, sessionId: "different-session" },
+			{ ...plan, selectedEntryIds: [...plan.selectedEntryIds, "changed"] },
+			{ ...plan, continuationEntryIds: [...plan.continuationEntryIds, "changed"] },
+			{ ...plan, sourceSha256: "0".repeat(64) },
+		];
+
+		for (const changed of changedPlans) await applyCropPlan(w.pi, w.ctx, changed);
+
+		expect(w.calls.navigate).toHaveLength(0);
+		expect(w.session.entries).toHaveLength(before);
+		expect(entriesByType(w.session, "custom_message", "ctree/crop-tail")).toHaveLength(0);
 	});
 
 	it("protects the latest result per tool in candidates (panel enforces double-mark)", () => {
@@ -575,7 +594,7 @@ describe("range compression behavior", () => {
 		w.session.assistant("anchor");
 		const start = w.session.user("selected through leaf");
 		const leaf = w.session.assistant("selected final answer");
-		const plan = planRange(snapshotSession(w.session.manager), start, leaf);
+		const plan = prepareRewrite(snapshotSession(w.session.manager), start, leaf);
 
 		await runBlockingRangeCompression(w.pi, w.ctx, plan, undefined, {
 			draft: async () => "generated leaf summary",

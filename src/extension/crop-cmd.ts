@@ -18,6 +18,7 @@ import {
 } from "../core/index.ts";
 import { refreshAmbient } from "./ambient.ts";
 import { openPanel } from "./panel-cmd.ts";
+import { applyRewrite } from "./rewrite.ts";
 import { deriveState } from "./state.ts";
 
 interface CropFlags {
@@ -57,37 +58,34 @@ function notifyDryRun(ctx: ExtensionCommandContext, plan: CropPlan): void {
 	);
 }
 
-/** Apply a reviewed plan. Re-validates the leaf (TRD §6) before writing. */
+/** Apply a reviewed plan through the shared append-only rewrite engine. */
 export async function applyCropPlan(pi: ExtensionAPI, ctx: ExtensionCommandContext, plan: CropPlan): Promise<void> {
-	await ctx.waitForIdle();
-	const leafNow = ctx.sessionManager.getLeafId();
-	if (leafNow !== plan.sourceLeafId) {
-		ctx.ui.notify("session changed while the crop panel was open — re-run /crop (nothing written)", "warning");
-		return;
-	}
-	if (!plan.anchorId) {
-		ctx.ui.notify("cannot crop the very first entry of a session", "error");
-		return;
-	}
-	const state = deriveState(ctx);
-	const block = renderReconstruction(state, plan);
-
-	const nav = await ctx.navigateTree(plan.anchorId, { summarize: false });
-	if (nav.cancelled) {
-		ctx.ui.notify("crop aborted — navigation cancelled, nothing written", "warning");
-		return;
-	}
-	// triggerTurn:false with NO deliverAs — same reasoning as merge.ts: the reconstruction block
-	// must be in the session before the ctree/crop marker, not staged for a hypothetical next turn.
-	// `dropped` is added only when whole turns were removed — keeps plain-crop entries byte-stable.
 	const details = {
 		v: 1 as const,
 		sourceLeafId: plan.sourceLeafId,
 		stubbed: plan.stubs,
 		...(plan.dropped.length ? { dropped: plan.dropped } : {}),
 	};
-	pi.sendMessage({ customType: CTREE_CROP_TAIL, content: block, display: true, details }, { triggerTurn: false });
-	pi.appendEntry(CTREE_CROP, details);
+	try {
+		const result = await applyRewrite(pi, ctx, plan, {
+			messages: [
+				{
+					customType: CTREE_CROP_TAIL,
+					content: renderReconstruction(plan),
+					display: true,
+					details,
+				},
+			],
+			marker: { customType: CTREE_CROP, data: details },
+		});
+		if (!result.applied) {
+			ctx.ui.notify("crop aborted — navigation cancelled, nothing written", "warning");
+			return;
+		}
+	} catch (error) {
+		ctx.ui.notify(`${(error as Error).message} re-run /crop (nothing written)`, "warning");
+		return;
+	}
 	refreshAmbient(pi, ctx);
 	ctx.ui.notify(cropAppliedMessage(plan), "info");
 }

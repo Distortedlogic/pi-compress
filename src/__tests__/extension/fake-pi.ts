@@ -67,9 +67,27 @@ export class FakeSession {
 	}
 
 	toolResult(toolName: string, text: string): string {
+		const toolCallId = `c${this.entries.length + 1}`;
+		this.manager.appendMessage({
+			role: "assistant",
+			content: [{ type: "toolCall", id: toolCallId, name: toolName, arguments: {} }],
+			api: "openai-completions",
+			provider: "anthropic",
+			model: "opus-4.8",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse",
+			timestamp: Date.now(),
+		});
 		return this.manager.appendMessage({
 			role: "toolResult",
-			toolCallId: `c${this.entries.length + 1}`,
+			toolCallId,
 			toolName,
 			content: [{ type: "text", text }],
 			isError: false,

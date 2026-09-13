@@ -8,13 +8,14 @@ export * from "./record.ts";
 export * from "./crop.ts";
 export {
 	candidateByEntryId,
-	planRange,
+	prepareRewrite,
 	rangeCandidates,
 	renderRangeTail,
 	resolveRangeEndpoint,
+	sourceSha8,
 	type RangeCandidate,
 	type RangeEndpointResult,
-	type RangePlan,
+	type RewritePlan,
 } from "./range-compress.ts";
 export * from "./serialize.ts";
 export * from "./vm/panel.ts";
