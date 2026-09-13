@@ -6,6 +6,18 @@
  */
 
 import type { SessionTreeNode } from "@earendil-works/pi-coding-agent";
+import {
+	CTREE_CROP,
+	CTREE_CROP_TAIL,
+	CTREE_DECISION,
+	CTREE_RANGE_COMPACT,
+	CTREE_RANGE_TAIL,
+	ctreeCloseData,
+	ctreeCropData,
+	ctreeDecisionDetails,
+	ctreeRangeCompactData,
+	ctreeRangeTailDetails,
+} from "../../protocol.ts";
 import type { SessionSnapshot } from "../../session.ts";
 import { aggregateConsumers } from "../consumers.ts";
 import {
@@ -21,21 +33,8 @@ import {
 import { type ForkInfo, type ForkPresentation, decisionsOnPath, nearestOpenFork } from "../ctree.ts";
 import { type Band, band, estimateContextTokens, estimateEntryTokens, fmtTokens } from "../estimate.ts";
 import { serializeEntry, textOfContent } from "../serialize.ts";
-import type { CtreeCropData, CtreeDecisionDetails, SessionEntry, UserContent } from "../types.ts";
-import {
-	CTREE_CLOSE,
-	CTREE_CROP,
-	CTREE_CROP_TAIL,
-	CTREE_DECISION,
-	CTREE_RANGE_COMPACT,
-	CTREE_RANGE_TAIL,
-	ctreeCloseData,
-	ctreeForkData,
-	ctreeRangeCompactData,
-	ctreeRangeTailDetails,
-	isCustomMessageEntry,
-	isMessageEntry,
-} from "../types.ts";
+import type { SessionEntry, UserContent } from "../types.ts";
+import { isCustomMessageEntry, isMessageEntry } from "../types.ts";
 
 export type PanelView = "tree" | "crop" | "consumers" | "decisions" | "inspect";
 
@@ -281,11 +280,11 @@ export class PanelVm {
 		}
 		switch (e.type) {
 			case "custom_message": {
-				const t = (e as { customType: string }).customType;
+				const t = e.customType;
 				if (t === CTREE_DECISION) {
-					const d = (e as { details?: CtreeDecisionDetails }).details;
+					const details = ctreeDecisionDetails(e);
 					row.glyph = "◆";
-					row.text = `Decision: ${d?.branchName ?? firstLine(textOfContent((e as { content: UserContent }).content))}`;
+					row.text = `Decision: ${details?.branchName ?? firstLine(textOfContent(e.content))}`;
 				} else if (t === CTREE_CROP_TAIL) {
 					row.glyph = "✂";
 					row.text = "[crop tail — rebuilt context]";
@@ -300,15 +299,15 @@ export class PanelVm {
 				return row;
 			}
 			case "custom": {
-				const ct = (e as { customType: string }).customType;
+				const ct = e.customType;
 				const close = ctreeCloseData(e);
 				if (close) {
 					const fork = this.forkById.get(close.forkEntryId);
 					row.text = `closed ⎇ ${fork?.data.name ?? close.forkEntryId} · ${close.status}${close.note ? ` · "${close.note}"` : ""}`;
 				} else if (ct === CTREE_CROP) {
-					const d = (e as { data?: CtreeCropData }).data;
+					const data = ctreeCropData(e);
 					row.glyph = "✂";
-					row.text = `crop marker · ${d?.stubbed.length ?? 0} stubbed`;
+					row.text = `crop marker · ${data?.stubbed.length ?? 0} stubbed`;
 				} else if (ct === CTREE_RANGE_COMPACT) {
 					const d = ctreeRangeCompactData(e);
 					row.glyph = "≣";
@@ -418,7 +417,7 @@ export class PanelVm {
 		}
 		const rows: PanelRow[] = [];
 		for (const d of [...decs].reverse()) {
-			const det = d.details as CtreeDecisionDetails | undefined;
+			const det = ctreeDecisionDetails(d);
 			const fork = det ? this.forkById.get(det.forkEntryId) : undefined;
 			const model = fork?.data.branchModel ?? fork?.data.trunkModel ?? "—";
 			const date = (d.timestamp ?? "").slice(0, 10);

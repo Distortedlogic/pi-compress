@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
+import { CTREE_DECISION } from "../protocol.ts";
 import type { SessionSnapshot } from "../session.ts";
 import { snapshotEntry } from "../session.ts";
 import { estimateEntryTokens, fmtTokens } from "./estimate.ts";
 import { serializeEntries } from "./serialize.ts";
 import type { SessionEntry } from "./types.ts";
-import { CTREE_DECISION, isCustomMessageEntry, isMessageEntry } from "./types.ts";
+import { isCustomMessageEntry, isMessageEntry } from "./types.ts";
 
 /** One atomic, ordered selection unit on the active context path. */
 export interface RangeCandidate {

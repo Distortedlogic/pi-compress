@@ -8,11 +8,19 @@ import { applyRangeCompressionPlan } from "../../extension/range-compress.ts";
 import { undoHandler } from "../../extension/undo.ts";
 import piContextTree from "../../index.ts";
 import {
+	COMPRESSION_ENTRY,
 	COMPRESSION_REQUEST,
 	COMPRESSION_RESULT,
+	COMPRESSION_TAIL,
+	type CompressionDetails,
 	type CompressionRequest,
+	CompressionRequestSchema,
 	type CompressionResult,
 	CompressionResultSchema,
+	LEGACY_COMPRESSION_ENTRY,
+	QUEUED_TASK_TAIL,
+	compressionDetails,
+	compressionTailDetails,
 } from "../../protocol.ts";
 import { snapshotSession } from "../../session.ts";
 import { makeFake } from "./fake-pi.ts";
@@ -117,6 +125,73 @@ function batchWorld() {
 }
 
 describe("independent compression interface", () => {
+	it("keeps external schemas exact", () => {
+		const world = batchWorld();
+		const request = {
+			...world.base,
+			action: "status" as const,
+			requestId: randomUUID(),
+		};
+		const result = {
+			v: 1 as const,
+			requestId: request.requestId,
+			sessionId: request.sessionId,
+			operationId: request.operationId,
+			status: "missing" as const,
+		};
+
+		expect(Value.Check(CompressionRequestSchema, request)).toBe(true);
+		expect(Value.Check(CompressionRequestSchema, { ...request, future: true })).toBe(false);
+		expect(Value.Check(CompressionRequestSchema, { ...request, batch: { ...request.batch, future: true } })).toBe(
+			false,
+		);
+		expect(Value.Check(CompressionResultSchema, result)).toBe(true);
+		expect(Value.Check(CompressionResultSchema, { ...result, future: true })).toBe(false);
+	});
+
+	it("reads current and legacy compression markers and both tail types", () => {
+		const world = makeFake();
+		const hash = "a".repeat(64);
+		const details: CompressionDetails = {
+			v: 2,
+			runId: "run",
+			planId: hash,
+			batchId: hash,
+			operationId: "operation",
+			structuralRevision: hash,
+			fileRevision: hash,
+			preCompletionBitmap: [false],
+			sourceLeafId: "source",
+			preTaskAnchorId: "anchor",
+			taskMessageEntryId: "task",
+			startEntryId: "start",
+			endEntryId: "end",
+			selectedEntryIds: ["start", "end"],
+			sourceSha256: hash,
+		};
+		const current = world.session.append({ type: "custom", customType: COMPRESSION_ENTRY, data: details });
+		const legacy = world.session.append({ type: "custom", customType: LEGACY_COMPRESSION_ENTRY, data: details });
+		const queued = world.session.append({
+			type: "custom_message",
+			customType: QUEUED_TASK_TAIL,
+			content: "task",
+			display: true,
+			details,
+		});
+		const summary = world.session.append({
+			type: "custom_message",
+			customType: COMPRESSION_TAIL,
+			content: "summary",
+			display: true,
+			details,
+		});
+
+		expect(compressionDetails(world.session.manager.getEntry(current)!)?.runId).toBe("run");
+		expect(compressionDetails(world.session.manager.getEntry(legacy)!)?.runId).toBe("run");
+		expect(compressionTailDetails(world.session.manager.getEntry(queued)!)?.runId).toBe("run");
+		expect(compressionTailDetails(world.session.manager.getEntry(summary)!)?.runId).toBe("run");
+	});
+
 	it("prepares without mutation, applies once, and restores originals with undo", async () => {
 		const world = batchWorld();
 		world.ui.editorQueue.push("__ACCEPT_PREFILL__");

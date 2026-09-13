@@ -8,11 +8,12 @@
  */
 
 import { createHash } from "node:crypto";
+import type { CtreeCropDrop, CtreeCropStub } from "../protocol.ts";
 import type { SessionSnapshot } from "../session.ts";
 import { snapshotEntry } from "../session.ts";
 import { estimateEntryTokens, fmtTokens } from "./estimate.ts";
 import { serializeEntry, textOfContent } from "./serialize.ts";
-import type { AgentMessage, CtreeCropDrop, CtreeCropStub, MessageEntry, SessionEntry } from "./types.ts";
+import type { AgentMessage, MessageEntry, SessionEntry } from "./types.ts";
 import { isMessageEntry } from "./types.ts";
 
 export interface CropCandidate {

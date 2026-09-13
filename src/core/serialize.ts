@@ -42,7 +42,7 @@ export function serializeEntry(e: SessionEntry): string | undefined {
 	}
 	switch (e.type) {
 		case "custom_message":
-			return `[${(e as { customType: string }).customType}]: ${textOfContent((e as { content: UserContent }).content)}`;
+			return `[${e.customType}]: ${textOfContent(e.content)}`;
 		case "branch_summary":
 			return `[branch summary]: ${(e as { summary: string }).summary}`;
 		case "compaction":

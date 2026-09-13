@@ -147,18 +147,18 @@ src/
 
 **Depends on:** WU-03
 
-- [ ] Move all protocol constants and persisted payload schemas to `src/protocol.ts`.
-- [ ] Keep exact schemas for external request and result messages.
-- [ ] Use forward-compatible schemas for stored `ctree/*` entries where additive fields are valid.
-- [ ] Generate TypeScript types with `Static<typeof Schema>`.
-- [ ] Replace manual `v === 1` checks and unsafe payload casts with `Value.Check`.
-- [ ] Keep readers for every current durable type and the accepted legacy compression type.
-- [ ] Do not rename stored custom types to match display names.
+- [x] Move all protocol constants and persisted payload schemas to `src/protocol.ts`.
+- [x] Keep exact schemas for external request and result messages.
+- [x] Use forward-compatible schemas for stored `ctree/*` entries where additive fields are valid.
+- [x] Generate TypeScript types with `Static<typeof Schema>`.
+- [x] Replace manual `v === 1` checks and unsafe payload casts with `Value.Check`.
+- [x] Keep readers for every current durable type and the accepted legacy compression type.
+- [x] Do not rename stored custom types to match display names.
 
 **Gate**
 
-- [ ] Each external or persisted boundary validates `unknown` data before use.
-- [ ] `./protocol` remains source compatible.
+- [x] Each external or persisted boundary validates `unknown` data before use.
+- [x] `./protocol` remains source compatible.
 
 ### WU-05 — Create one append-only rewrite engine
 

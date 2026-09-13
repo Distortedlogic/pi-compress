@@ -10,8 +10,16 @@
  */
 
 import type { CustomEntry, CustomMessageEntry, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import type { CtreeCloseData, CtreeCloseStatus, CtreeForkData } from "./types.ts";
-import { CTREE_DECISION, CTREE_FORK, ctreeCloseData, ctreeForkData, isCustomMessageEntry } from "./types.ts";
+import {
+	CTREE_DECISION,
+	CTREE_FORK,
+	type CtreeCloseData,
+	type CtreeCloseStatus,
+	type CtreeForkData,
+	ctreeCloseData,
+	ctreeForkData,
+} from "../protocol.ts";
+import { isCustomMessageEntry } from "./types.ts";
 
 export type ForkStatus = "open" | CtreeCloseStatus;
 export type ForkPresentation = "active" | "dangling" | "squashed" | "rejected";
@@ -41,6 +49,7 @@ export function extractForks(session: SessionManagerView): ForkInfo[] {
 	const currentBranchIds = new Set(session.getBranch().map((entry) => entry.id));
 	const forks: ForkInfo[] = [];
 	for (const entry of entries) {
+		if (entry.type !== "custom") continue;
 		const data = ctreeForkData(entry);
 		if (!data) continue;
 		const close = closes.get(entry.id);
@@ -51,7 +60,7 @@ export function extractForks(session: SessionManagerView): ForkInfo[] {
 		const depth = session.getBranch(entry.id).filter((parent) => ctreeForkData(parent)).length;
 		forks.push({
 			entryId: entry.id,
-			entry: entry as CustomEntry,
+			entry,
 			data,
 			close,
 			status,

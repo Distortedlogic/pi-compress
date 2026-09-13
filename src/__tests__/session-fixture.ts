@@ -1,6 +1,6 @@
 import type { AssistantMessage, ToolCall } from "@earendil-works/pi-ai";
 import { type SessionEntry, type SessionHeader, SessionManager } from "@earendil-works/pi-coding-agent";
-import { CTREE_CLOSE, CTREE_CROP, CTREE_DECISION, CTREE_FORK, type CtreeCloseStatus } from "../core/types.ts";
+import { CTREE_CLOSE, CTREE_CROP, CTREE_DECISION, CTREE_FORK, type CtreeCloseStatus } from "../protocol.ts";
 
 export interface BuiltSession {
 	header: SessionHeader;

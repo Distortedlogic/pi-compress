@@ -9,18 +9,13 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { Value } from "typebox/value";
 import {
-	CTREE_CLOSE,
-	CTREE_CROP,
-	CTREE_FORK,
-	CTREE_RANGE_COMPACT,
-	type CtreeCropData,
+	compressionDetails,
 	ctreeCloseData,
+	ctreeCropData,
 	ctreeForkData,
 	ctreeRangeCompactData,
-} from "../core/index.ts";
-import { COMPRESSION_ENTRY, CompressionDetailsSchema } from "../protocol.ts";
+} from "../protocol.ts";
 import { refreshAmbient } from "./ambient.ts";
 import { type SessionState, deriveState } from "./state.ts";
 
@@ -37,42 +32,45 @@ function lastUndo(state: SessionState): UndoStep | undefined {
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const e = entries[i];
 		if (!e || !branchIds.has(e.id)) continue;
-		const customType = (e as { customType?: string }).customType;
+		const compression = compressionDetails(e);
+		if (compression) {
+			return {
+				target: compression.sourceLeafId,
+				describe: "restore the batch execution before compression",
+			};
+		}
 
-		if (customType === COMPRESSION_ENTRY || customType === "pi-workstream/compression") {
-			const data = (e as { data?: unknown }).data;
-			if (!Value.Check(CompressionDetailsSchema, data)) continue;
-			return { target: data.sourceLeafId, describe: "restore the batch execution before compression" };
-		}
-		if (customType === CTREE_CLOSE) {
-			const d = ctreeCloseData(e);
-			if (!d?.prevLeafId) continue; // pre-v0.2 close marker carries no undo anchor
-			const name = forks.find((f) => f.entryId === d.forkEntryId)?.data.name ?? "branch";
-			const how = d.status === "discarded" ? "re-open discarded" : "re-open";
-			return { target: d.prevLeafId, describe: `${how} '${name}' at its leaf — the close marker stays in history` };
-		}
-		if (customType === CTREE_CROP) {
-			const d = (e as { data?: CtreeCropData }).data;
-			if (!d?.sourceLeafId) continue;
-			const n = (d.stubbed?.length ?? 0) + (d.dropped?.length ?? 0);
+		const close = ctreeCloseData(e);
+		if (close?.prevLeafId) {
+			const name = forks.find((fork) => fork.entryId === close.forkEntryId)?.data.name ?? "branch";
+			const how = close.status === "discarded" ? "re-open discarded" : "re-open";
 			return {
-				target: d.sourceLeafId,
-				describe: `restore ${n} cropped item${n === 1 ? "" : "s"} — back to before the crop`,
+				target: close.prevLeafId,
+				describe: `${how} '${name}' at its leaf — the close marker stays in history`,
 			};
 		}
-		if (customType === CTREE_RANGE_COMPACT) {
-			const d = ctreeRangeCompactData(e);
-			if (!d) continue;
-			const n = d.selectedEntryIds.length;
+
+		const crop = ctreeCropData(e);
+		if (crop) {
+			const count = crop.stubbed.length + (crop.dropped?.length ?? 0);
 			return {
-				target: d.sourceLeafId,
-				describe: `restore compressed message range (${n} entr${n === 1 ? "y" : "ies"}) — summary and marker stay in off-path history`,
+				target: crop.sourceLeafId,
+				describe: `restore ${count} cropped item${count === 1 ? "" : "s"} — back to before the crop`,
 			};
 		}
-		if (customType === CTREE_FORK) {
-			const d = ctreeForkData(e);
-			if (!d?.parentEntryId) continue;
-			return { target: d.parentEntryId, describe: `undo /branch '${d.name}' — back to where you branched` };
+
+		const range = ctreeRangeCompactData(e);
+		if (range) {
+			const count = range.selectedEntryIds.length;
+			return {
+				target: range.sourceLeafId,
+				describe: `restore compressed message range (${count} entr${count === 1 ? "y" : "ies"}) — summary and marker stay in off-path history`,
+			};
+		}
+
+		const fork = ctreeForkData(e);
+		if (fork?.parentEntryId) {
+			return { target: fork.parentEntryId, describe: `undo /branch '${fork.name}' — back to where you branched` };
 		}
 	}
 	return undefined;

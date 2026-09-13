@@ -1,3 +1,4 @@
+export * from "../protocol.ts";
 export * from "../session.ts";
 export * from "./types.ts";
 export * from "./ctree.ts";

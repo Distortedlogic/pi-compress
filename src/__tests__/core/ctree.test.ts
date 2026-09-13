@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { decisionsOnPath, extractForks, nearestOpenFork, siblingForks } from "../../core/ctree.ts";
+import {
+	CTREE_CLOSE,
+	CTREE_CROP,
+	CTREE_CROP_TAIL,
+	CTREE_DECISION,
+	CTREE_FORK,
+	CTREE_RANGE_COMPACT,
+	CTREE_RANGE_TAIL,
+	ctreeCloseData,
+	ctreeCropData,
+	ctreeCropTailDetails,
+	ctreeDecisionDetails,
+	ctreeForkData,
+	ctreeRangeCompactData,
+	ctreeRangeTailDetails,
+} from "../../protocol.ts";
 import { PiSessionFixture } from "../session-fixture.ts";
 
 /**
@@ -143,5 +159,65 @@ describe("decisionsOnPath", () => {
 		const tree = b.session;
 		const decs = decisionsOnPath(tree.getBranch());
 		expect(decs.map((d) => d.id)).toEqual([ids.dec]);
+	});
+});
+
+describe("durable ctree readers", () => {
+	it("validates every stored type and permits additive fields", () => {
+		const b = new PiSessionFixture();
+		const anchor = b.user("anchor");
+		const fork = b.custom(CTREE_FORK, {
+			v: 1,
+			name: "valid",
+			parentEntryId: anchor,
+			createdAt: 1,
+			status: "open",
+			future: true,
+		});
+		const close = b.custom(CTREE_CLOSE, {
+			v: 1,
+			forkEntryId: fork,
+			status: "squashed",
+			future: true,
+		});
+		const cropPayload = { v: 1, sourceLeafId: anchor, stubbed: [], future: true };
+		const crop = b.custom(CTREE_CROP, cropPayload);
+		const cropTail = b.customMessage(CTREE_CROP_TAIL, "tail", true, cropPayload);
+		const decision = b.customMessage(CTREE_DECISION, "decision", true, {
+			v: 1,
+			forkEntryId: fork,
+			branchName: "valid",
+			future: true,
+		});
+		const rangePayload = {
+			v: 1,
+			sourceLeafId: anchor,
+			anchorId: anchor,
+			startEntryId: anchor,
+			endEntryId: anchor,
+			selectedEntryIds: [anchor],
+			selectedEstTokens: 1,
+			summaryEstTokens: 1,
+			reclaimedEstTokens: 0,
+			summaryModel: "test/model",
+			sourceSha8: "12345678",
+			future: true,
+		};
+		const range = b.custom(CTREE_RANGE_COMPACT, rangePayload);
+		const rangeTail = b.customMessage(CTREE_RANGE_TAIL, "tail", true, rangePayload);
+
+		expect(ctreeForkData(b.session.getEntry(fork)!)?.name).toBe("valid");
+		expect(ctreeCloseData(b.session.getEntry(close)!)?.status).toBe("squashed");
+		expect(ctreeCropData(b.session.getEntry(crop)!)?.sourceLeafId).toBe(anchor);
+		expect(ctreeCropTailDetails(b.session.getEntry(cropTail)!)?.sourceLeafId).toBe(anchor);
+		expect(ctreeDecisionDetails(b.session.getEntry(decision)!)?.branchName).toBe("valid");
+		expect(ctreeRangeCompactData(b.session.getEntry(range)!)?.sourceSha8).toBe("12345678");
+		expect(ctreeRangeTailDetails(b.session.getEntry(rangeTail)!)?.sourceSha8).toBe("12345678");
+	});
+
+	it("rejects an unknown stored schema version", () => {
+		const b = new PiSessionFixture();
+		const entryId = b.custom(CTREE_FORK, { v: 2, name: "future" });
+		expect(ctreeForkData(b.session.getEntry(entryId)!)).toBeUndefined();
 	});
 });

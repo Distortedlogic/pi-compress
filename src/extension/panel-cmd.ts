@@ -9,10 +9,10 @@ import { writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
-	type CtreeDecisionDetails,
 	type PanelAction,
 	type PanelInput,
 	type PanelView,
+	ctreeDecisionDetails,
 	decisionsOnPath,
 	exportDecisionsMarkdown,
 	textOfContent,
@@ -89,7 +89,7 @@ function notifyDecisions(ctx: ExtensionContext): void {
 		return;
 	}
 	const lines = [...decs].reverse().map((d) => {
-		const det = d.details as CtreeDecisionDetails | undefined;
+		const det = ctreeDecisionDetails(d);
 		const text = textOfContent(d.content);
 		const outcome = text.split("\n").find((l) => l.startsWith("**Outcome:**")) ?? text.split("\n")[0] ?? "";
 		const date = (d.timestamp ?? "").slice(0, 10);

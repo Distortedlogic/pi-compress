@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Value } from "typebox/value";
 import {
 	type SessionEntry,
 	isMessageEntry,
@@ -14,8 +13,8 @@ import {
 	COMPRESSION_ENTRY,
 	COMPRESSION_TAIL,
 	type CompressionDetails,
-	CompressionDetailsSchema,
 	QUEUED_TASK_TAIL,
+	compressionDetails,
 } from "../protocol.ts";
 import { snapshotSession } from "../session.ts";
 
@@ -182,15 +181,9 @@ export function compressionOnBranch(
 	batchId: string,
 ): CompressionDetails | undefined {
 	for (const entry of branch(ctx).reverse()) {
-		if (
-			entry.type !== "custom" ||
-			(entry.customType !== COMPRESSION_ENTRY && entry.customType !== "pi-workstream/compression")
-		)
-			continue;
-		if (Value.Check(CompressionDetailsSchema, entry.data)) {
-			const details = entry.data;
-			if (details.runId === runId && details.planId === planId && details.batchId === batchId)
-				return structuredClone(details);
+		const details = compressionDetails(entry);
+		if (details?.runId === runId && details.planId === planId && details.batchId === batchId) {
+			return structuredClone(details);
 		}
 	}
 	return undefined;

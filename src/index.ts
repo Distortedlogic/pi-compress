@@ -8,7 +8,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { CTREE_DECISION, type CtreeDecisionDetails, textOfContent } from "./core/index.ts";
+import { CTREE_DECISION, type CtreeDecisionDetails, parseCtreeDecisionDetails, textOfContent } from "./core/index.ts";
 import { registerAmbient } from "./extension/ambient.ts";
 import { registerBatchCompression } from "./extension/batch-service.ts";
 import { registerBranch } from "./extension/branch.ts";
@@ -33,18 +33,21 @@ export default function piContextCompress(api: ExtensionAPI): void {
 	if (api.events) registerBatchCompression(api);
 
 	// ◆ decision records render as mockup-style cards in the chat (F7 polish)
-	api.registerMessageRenderer<CtreeDecisionDetails>(CTREE_DECISION, (message, options) => ({
-		invalidate: () => {},
-		render: (width: number) =>
-			decisionCardLines(
-				{
-					branchName: message.details?.branchName,
-					dateIso: message.timestamp ? new Date(message.timestamp).toISOString().slice(0, 10) : undefined,
-					content: textOfContent(message.content),
-					siblings: message.details?.siblings,
-					expanded: options.expanded,
-				},
-				width,
-			),
-	}));
+	api.registerMessageRenderer<CtreeDecisionDetails>(CTREE_DECISION, (message, options) => {
+		const details = parseCtreeDecisionDetails(message.details);
+		return {
+			invalidate: () => {},
+			render: (width: number) =>
+				decisionCardLines(
+					{
+						branchName: details?.branchName,
+						dateIso: message.timestamp ? new Date(message.timestamp).toISOString().slice(0, 10) : undefined,
+						content: textOfContent(message.content),
+						siblings: details?.siblings,
+						expanded: options.expanded,
+					},
+					width,
+				),
+		};
+	});
 }
