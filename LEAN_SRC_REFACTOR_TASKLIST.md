@@ -252,20 +252,20 @@ src/
 
 **Depends on:** WU-06, WU-07, and WU-08
 
-- [ ] Build `src/__tests__/protocol.test.ts` from current protocol, legacy-data, and schema tests.
-- [ ] Build `src/__tests__/compression.test.ts` from current crop, turn, range, tree-safety, hash, performance, and batch tests.
-- [ ] Build `src/__tests__/extension.test.ts` from branch, merge, undo, ambient, panel, golden, RPC, and TUI tests.
-- [ ] Use `SessionManager.inMemory()` instead of `testkit.ts` and large fake session infrastructure.
-- [ ] Convert repeated cases to table-driven tests.
-- [ ] Keep normalized inline expected entry sequences for squash, discard, crop, and tournament; delete separate golden JSONL files and normalizers.
-- [ ] Keep one RPC smoke case and one TUI width and input smoke case.
-- [ ] Keep tests for extension policy and integration. Delete tests for Pi, TypeBox, `yargs-parser`, `minimatch`, and removed helper implementations.
-- [ ] Delete obsolete test helpers, generated fixtures, and duplicate suites only after their replacement cases pass.
+- [x] Build `src/__tests__/protocol.test.ts` from current protocol, legacy-data, and schema tests.
+- [x] Build `src/__tests__/compression.test.ts` from current crop, turn, range, tree-safety, hash, performance, and batch tests.
+- [x] Build `src/__tests__/extension.test.ts` from branch, merge, undo, ambient, panel, golden, RPC, and TUI tests.
+- [x] Use `SessionManager.inMemory()` instead of `testkit.ts` and large fake session infrastructure.
+- [x] Convert repeated cases to table-driven tests.
+- [x] Keep normalized inline expected entry sequences for squash, discard, crop, and tournament; delete separate golden JSONL files and normalizers.
+- [x] Keep one RPC smoke case and one TUI width and input smoke case.
+- [x] Keep tests for extension policy and integration. Delete tests for Pi, TypeBox, `yargs-parser`, `minimatch`, and removed helper implementations.
+- [x] Delete obsolete test helpers, generated fixtures, and duplicate suites only after their replacement cases pass.
 
 **Gate**
 
-- [ ] The final three test files cover every fixed contract.
-- [ ] No test checks deleted implementation details.
+- [x] The final three test files cover every fixed contract.
+- [x] No test checks deleted implementation details.
 
 ### WU-10 — Normalize dependencies and package configuration
 
