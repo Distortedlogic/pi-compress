@@ -43,6 +43,9 @@ import {
 	CTREE_DECISION,
 	CTREE_FORK,
 	CTREE_RANGE_COMPACT,
+	RANGE_COMPRESSION_REQUEST,
+	RANGE_COMPRESSION_RESULT,
+	type RangeCompressionResult,
 } from "../src/protocol.ts";
 import { snapshotSession } from "../src/session.ts";
 
@@ -320,6 +323,31 @@ describe("extension registration and policy", () => {
 		expect([...value.shortcuts.keys()]).toEqual(["ctrl+q"]);
 		expect(value.renderers.has(CTREE_DECISION)).toBe(true);
 		expect(value.handlers.has("session_start")).toBe(true);
+	});
+
+	it("registers the generic range compression service", async () => {
+		const value = world();
+		piContextCompress(value.pi);
+		const requestId = "service-registration";
+		const result = await new Promise<RangeCompressionResult>((resolve) => {
+			const unsubscribe = value.pi.events.on(RANGE_COMPRESSION_RESULT, (event) => {
+				const parsed = event as RangeCompressionResult;
+				if (parsed.requestId !== requestId) return;
+				unsubscribe();
+				resolve(parsed);
+			});
+			value.pi.events.emit(RANGE_COMPRESSION_REQUEST, {
+				request: {
+					v: 1,
+					action: "status",
+					requestId,
+					sessionId: value.session.manager.getSessionId(),
+					operationId: "registration-check",
+				},
+				context: value.ctx,
+			});
+		});
+		expect(result.status).toBe("missing");
 	});
 
 	it("keeps package entry points on the root source files", () => {

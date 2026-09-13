@@ -168,18 +168,18 @@
 
 ## Work unit 10 — Extend the existing tests
 
-- [ ] Update `tests/compression.test.ts` for the extracted module imports.
-- [ ] Add cases to `tests/compression.test.ts` for every protected metadata and structural boundary.
-- [ ] Add a case that proves the first selector contains only legal starts.
-- [ ] Add cases that prove the second selector contains only legal ends for the chosen start and stops before the first protected boundary.
-- [ ] Add a branched-session case that proves inactive branches are absent from both selector projections.
-- [ ] Keep tests for complete parallel tool-call groups, continuation order, source hashes, stale plans, and append-only recovery.
-- [ ] Add direct API cases for reviewed success, automated success, review cancellation, empty summary, abort, stale leaf, changed session, pending messages, and model failure.
-- [ ] Update `tests/protocol.test.ts` with exact generic request and result schema cases.
-- [ ] Add generic service cases for prepare, status, apply, replay, cancel, missing, conflict, busy, and session shutdown.
-- [ ] Update `tests/extension.test.ts` to check generic service registration and the `./range-compression` package export.
-- [ ] Keep the existing RPC extension-load test.
-- [ ] Do not create another test suite file.
+- [x] Update `tests/compression.test.ts` for the extracted module imports.
+- [x] Add cases to `tests/compression.test.ts` for every protected metadata and structural boundary.
+- [x] Add a case that proves the first selector contains only legal starts.
+- [x] Add cases that prove the second selector contains only legal ends for the chosen start and stops before the first protected boundary.
+- [x] Add a branched-session case that proves inactive branches are absent from both selector projections.
+- [x] Keep tests for complete parallel tool-call groups, continuation order, source hashes, stale plans, and append-only recovery.
+- [x] Add direct API cases for reviewed success, automated success, review cancellation, empty summary, abort, stale leaf, changed session, pending messages, and model failure.
+- [x] Update `tests/protocol.test.ts` with exact generic request and result schema cases.
+- [x] Add generic service cases for prepare, status, apply, replay, cancel, missing, conflict, busy, and session shutdown.
+- [x] Update `tests/extension.test.ts` to check generic service registration and the `./range-compression` package export.
+- [x] Keep the existing RPC extension-load test.
+- [x] Do not create another test suite file.
 
 **Completion gate:** Existing behavior stays covered, and each new public contract has success, cancellation, conflict, and stale-state coverage.
 

@@ -19,6 +19,10 @@ import {
 	CompressionResultSchema,
 	LEGACY_COMPRESSION_ENTRY,
 	QUEUED_TASK_TAIL,
+	RANGE_COMPRESSION_REQUEST,
+	RANGE_COMPRESSION_RESULT,
+	RangeCompressionRequestSchema,
+	RangeCompressionResultSchema,
 	compressionDetails,
 	compressionTailDetails,
 	ctreeCloseData,
@@ -105,6 +109,8 @@ describe("durable protocol names", () => {
 		["crop tail", CTREE_CROP_TAIL, "ctree/crop-tail"],
 		["range", CTREE_RANGE_COMPACT, "ctree/range-compact"],
 		["range tail", CTREE_RANGE_TAIL, "ctree/range-tail"],
+		["range request", RANGE_COMPRESSION_REQUEST, "pi-context-compress/v1/range/request"],
+		["range result", RANGE_COMPRESSION_RESULT, "pi-context-compress/v1/range/result"],
 		["request", COMPRESSION_REQUEST, "pi-context-compress/v1/request"],
 		["result", COMPRESSION_RESULT, "pi-context-compress/v1/result"],
 		["batch marker", COMPRESSION_ENTRY, "pi-context-compress/compression"],
@@ -225,5 +231,76 @@ describe("external event schemas", () => {
 				status,
 			}),
 		).toBe(true);
+	});
+});
+
+describe("generic range event schemas", () => {
+	const prepare = {
+		v: 1 as const,
+		requestId: "request",
+		sessionId: "session",
+		operationId: "operation",
+		action: "prepare" as const,
+		startEntryId: "start",
+		endEntryId: "end",
+		review: false,
+	};
+	const resultBase = {
+		v: 1 as const,
+		requestId: "request",
+		sessionId: "session",
+		operationId: "operation",
+	};
+
+	it("requires an exact prepare request with an explicit review choice", () => {
+		expect(Value.Check(RangeCompressionRequestSchema, prepare)).toBe(true);
+		expect(
+			Value.Check(RangeCompressionRequestSchema, {
+				...prepare,
+				anchorEntryId: "anchor",
+				instructions: "keep errors",
+			}),
+		).toBe(true);
+		expect(Value.Check(RangeCompressionRequestSchema, { ...prepare, review: undefined })).toBe(false);
+		expect(Value.Check(RangeCompressionRequestSchema, { ...prepare, extra: true })).toBe(false);
+	});
+
+	it.each(["apply", "cancel", "status"] as const)("requires an exact %s request", (action) => {
+		const request = { ...resultBase, action };
+		expect(Value.Check(RangeCompressionRequestSchema, request)).toBe(true);
+		expect(Value.Check(RangeCompressionRequestSchema, { ...request, startEntryId: "start" })).toBe(false);
+	});
+
+	it("accepts only status-specific exact results", () => {
+		for (const status of ["prepared", "cancelled", "missing"] as const) {
+			expect(Value.Check(RangeCompressionResultSchema, { ...resultBase, status })).toBe(true);
+		}
+		expect(
+			Value.Check(RangeCompressionResultSchema, {
+				...resultBase,
+				status: "applied",
+				details: { ...range, operationId: "operation" },
+			}),
+		).toBe(true);
+		for (const code of [
+			"invalid_request",
+			"operation_conflict",
+			"session_changed",
+			"compression_failed",
+			"not_prepared",
+			"busy",
+		] as const) {
+			expect(Value.Check(RangeCompressionResultSchema, { ...resultBase, status: "failed", code })).toBe(true);
+		}
+	});
+
+	it.each([
+		{ status: "applied" },
+		{ status: "prepared", details: range },
+		{ status: "failed" },
+		{ status: "missing", code: "busy" },
+		{ status: "prepared", extra: true },
+	])("rejects an invalid generic result %#", (value) => {
+		expect(Value.Check(RangeCompressionResultSchema, { ...resultBase, ...value })).toBe(false);
 	});
 });

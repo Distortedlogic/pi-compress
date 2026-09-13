@@ -3,6 +3,7 @@ import {
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	SessionManager,
+	type TreeSelectorComponent,
 	createEventBus,
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
@@ -42,6 +43,11 @@ import {
 	type CompressionRequest,
 	type CompressionResult,
 	QUEUED_TASK_TAIL,
+	RANGE_COMPRESSION_REQUEST,
+	RANGE_COMPRESSION_RESULT,
+	type RangeCompressionPrepareRequest,
+	type RangeCompressionRequest,
+	type RangeCompressionResult,
 } from "../src/protocol.ts";
 import {
 	type PreparedRangeCompression,
@@ -52,6 +58,7 @@ import {
 	compressRange,
 	prepareRangeCompression,
 	rangeCompressHandler,
+	registerRangeCompressionService,
 	renderRangeTail,
 	reviewRangeCompression,
 } from "../src/range-compression.ts";
@@ -133,7 +140,7 @@ function cropScenario() {
 
 function extensionContext(
 	manager: SessionManager,
-	complete?: () => Promise<AssistantMessage>,
+	complete?: (...args: unknown[]) => Promise<AssistantMessage>,
 ): ExtensionCommandContext {
 	const model = {
 		provider: "openai",
@@ -195,6 +202,48 @@ function assistantResponse(text: string): AssistantMessage {
 		stopReason: "stop",
 		timestamp: Date.now(),
 	};
+}
+
+function selectorEntryIds(component: Component): string[] {
+	const selector = component as TreeSelectorComponent;
+	const list = selector.getTreeList();
+	const ids: string[] = [];
+	for (let count = 0; count < 100; count++) {
+		const entryId = list.getSelectedNode()?.entry.id;
+		if (!entryId || ids.includes(entryId)) break;
+		ids.push(entryId);
+		selector.handleInput("\x1b[B");
+	}
+	return ids;
+}
+
+function selectSelectorEntry(component: Component, entryId: string): void {
+	const selector = component as TreeSelectorComponent;
+	for (let count = 0; count < 100; count++) {
+		if (selector.getTreeList().getSelectedNode()?.entry.id === entryId) {
+			selector.handleInput("\r");
+			return;
+		}
+		selector.handleInput("\x1b[B");
+	}
+	throw new Error(`Selector entry ${entryId} was not found.`);
+}
+
+function captureRangeSelectors(ctx: ExtensionCommandContext, choices: readonly (string | undefined)[]): string[][] {
+	const projections: string[][] = [];
+	let selectionIndex = 0;
+	const ui = ctx.ui as unknown as {
+		custom: <T>(factory: (...args: any[]) => Component) => Promise<T>;
+	};
+	ui.custom = async <T>(factory: (...args: any[]) => Component): Promise<T> =>
+		new Promise<T>((resolve) => {
+			const component = factory({ terminal: { rows: 30 }, requestRender: () => {} }, {}, {}, resolve);
+			projections.push(selectorEntryIds(component));
+			const choice = choices[selectionIndex++];
+			if (choice === undefined) component.handleInput?.("\x1b");
+			else selectSelectorEntry(component, choice);
+		});
+	return projections;
 }
 
 function mutationApi(manager: SessionManager): ExtensionAPI {
@@ -360,6 +409,93 @@ describe("shared range safety", () => {
 		expect(() => prepareRewrite(value.snapshot, value.start, value.end)).toThrow();
 	});
 
+	it.each([
+		"custom",
+		"model_change",
+		"thinking_level_change",
+		"label",
+		"session_info",
+		"compaction",
+		"branch_summary",
+	] as const)("protects the %s metadata or structural boundary", (kind) => {
+		const session = new MemorySession();
+		session.user("root");
+		session.assistant("anchor");
+		const before = session.assistant("before boundary");
+		let boundary: string;
+		switch (kind) {
+			case "custom":
+				boundary = session.manager.appendCustomEntry("metadata");
+				break;
+			case "model_change":
+				boundary = session.manager.appendModelChange("openai", "other-model");
+				break;
+			case "thinking_level_change":
+				boundary = session.manager.appendThinkingLevelChange("high");
+				break;
+			case "label":
+				boundary = session.manager.appendLabelChange(before, "checkpoint");
+				break;
+			case "session_info":
+				boundary = session.manager.appendSessionInfo("named session");
+				break;
+			case "compaction":
+				boundary = session.manager.appendCompaction("summary", before, 100);
+				break;
+			case "branch_summary":
+				boundary = session.manager.branchWithSummary(before, "summary");
+				break;
+		}
+		const after = session.assistant("after boundary");
+		const snapshot = snapshotSession(session.manager);
+		expect(() => prepareRewrite(snapshot, boundary, boundary)).toThrow(/protected/);
+		if (kind !== "compaction") expect(() => prepareRewrite(snapshot, before, after)).toThrow(/protected/);
+	});
+
+	it("shows only legal starts in the first selector", async () => {
+		const session = new MemorySession();
+		session.user("root");
+		const anchor = session.assistant("legal before boundary");
+		const metadata = session.manager.appendCustomEntry("metadata");
+		const after = session.assistant("legal after boundary");
+		const pending = session.user("incomplete current turn");
+		const ctx = extensionContext(session.manager);
+		const projections = captureRangeSelectors(ctx, [undefined]);
+		await rangeCompressHandler(mutationApi(session.manager), ctx, "");
+		expect(projections).toHaveLength(1);
+		expect(new Set(projections[0])).toEqual(new Set([anchor, after]));
+		expect(projections[0]).not.toEqual(expect.arrayContaining([metadata, pending]));
+	});
+
+	it("shows only legal ends and stops at the first protected boundary", async () => {
+		const session = new MemorySession();
+		session.user("root");
+		const start = session.assistant("selected start");
+		const boundary = session.manager.appendCustomEntry("metadata");
+		const later = session.assistant("after boundary");
+		const ctx = extensionContext(session.manager);
+		const projections = captureRangeSelectors(ctx, [start, undefined]);
+		await rangeCompressHandler(mutationApi(session.manager), ctx, "");
+		expect(projections).toHaveLength(2);
+		expect(projections[1]).toEqual([start]);
+		expect(projections[1]).not.toEqual(expect.arrayContaining([boundary, later]));
+	});
+
+	it("omits inactive branches from both selector projections", async () => {
+		const session = new MemorySession();
+		session.user("root");
+		const anchor = session.assistant("branch anchor");
+		const inactive = session.assistant("inactive branch");
+		session.manager.branch(anchor);
+		const active = session.assistant("active branch");
+		const ctx = extensionContext(session.manager);
+		const projections = captureRangeSelectors(ctx, [anchor, undefined]);
+		await rangeCompressHandler(mutationApi(session.manager), ctx, "");
+		expect(projections).toHaveLength(2);
+		expect(projections.flat()).not.toContain(inactive);
+		expect(projections[0]).toEqual(expect.arrayContaining([anchor, active]));
+	});
+
 	it("requires confirmation after the native two-pass range selection", async () => {
 		const session = new MemorySession();
 		session.user("root");
@@ -469,12 +605,18 @@ describe("shared rewrite apply", () => {
 });
 
 describe("direct range compression API", () => {
-	function directWorld() {
+	function directWorld(complete?: (...args: unknown[]) => Promise<AssistantMessage>) {
 		const session = new MemorySession();
 		session.user("root");
 		const anchor = session.assistant("anchor");
 		const selected = session.assistant("selected");
-		return { session, anchor, selected, ctx: extensionContext(session.manager), pi: mutationApi(session.manager) };
+		return {
+			session,
+			anchor,
+			selected,
+			ctx: extensionContext(session.manager, complete),
+			pi: mutationApi(session.manager),
+		};
 	}
 
 	it("prepares, reviews, and applies one immutable range value", async () => {
@@ -510,6 +652,285 @@ describe("direct range compression API", () => {
 		const outcome: RangeCompressionOutcome = await compressRange(world.pi, world.ctx, input);
 		expect(outcome.status).toBe("applied");
 		if (outcome.status === "applied") expect(outcome.details.operationId).toBe("automated-operation");
+	});
+
+	it("cancels reviewed compression without writes when the editor closes", async () => {
+		const world = directWorld();
+		(world.ctx.ui as { editor: (title: string, prefill?: string) => Promise<string | undefined> }).editor = async () =>
+			undefined;
+		const before = world.session.manager.getEntries().length;
+		const outcome = await compressRange(world.pi, world.ctx, {
+			operationId: "review-cancelled",
+			startEntryId: world.selected,
+			endEntryId: world.selected,
+			review: true,
+		});
+		expect(outcome.status).toBe("cancelled");
+		expect(world.session.manager.getEntries()).toHaveLength(before);
+	});
+
+	it("rejects an empty model summary", async () => {
+		const world = directWorld(async () => assistantResponse(""));
+		await expect(
+			prepareRangeCompression(world.ctx, {
+				operationId: "empty-summary",
+				startEntryId: world.selected,
+				endEntryId: world.selected,
+			}),
+		).rejects.toThrow(/empty draft/);
+	});
+
+	it("passes and honors the caller abort signal", async () => {
+		const controller = new AbortController();
+		let receivedSignal: AbortSignal | undefined;
+		const world = directWorld(async (...args: unknown[]) => {
+			receivedSignal = (args[2] as { signal?: AbortSignal }).signal;
+			controller.abort();
+			controller.signal.throwIfAborted();
+			return assistantResponse("unreachable");
+		});
+		await expect(
+			prepareRangeCompression(world.ctx, {
+				operationId: "aborted",
+				startEntryId: world.selected,
+				endEntryId: world.selected,
+				signal: controller.signal,
+			}),
+		).rejects.toMatchObject({ name: "AbortError" });
+		expect(receivedSignal).toBe(controller.signal);
+	});
+
+	it("rejects a stale source leaf before applying", async () => {
+		const world = directWorld();
+		const prepared = await prepareRangeCompression(world.ctx, {
+			operationId: "stale-leaf",
+			startEntryId: world.selected,
+			endEntryId: world.selected,
+		});
+		world.session.user("changed leaf");
+		const before = world.session.manager.getEntries().length;
+		await expect(applyPreparedRangeCompression(world.pi, world.ctx, prepared)).rejects.toThrow(/leaf changed/);
+		expect(world.session.manager.getEntries()).toHaveLength(before);
+	});
+
+	it("rejects a changed session before applying", async () => {
+		const world = directWorld();
+		const prepared = await prepareRangeCompression(world.ctx, {
+			operationId: "changed-session",
+			startEntryId: world.selected,
+			endEntryId: world.selected,
+		});
+		world.session.manager.newSession();
+		await expect(applyPreparedRangeCompression(world.pi, world.ctx, prepared)).rejects.toThrow(/session changed/);
+		expect(world.session.manager.getEntries()).toHaveLength(0);
+	});
+
+	it("rejects pending messages before preparation", async () => {
+		const world = directWorld();
+		(world.ctx as unknown as { hasPendingMessages: () => boolean }).hasPendingMessages = () => true;
+		await expect(
+			prepareRangeCompression(world.ctx, {
+				operationId: "pending-messages",
+				startEntryId: world.selected,
+				endEntryId: world.selected,
+			}),
+		).rejects.toThrow(/messages are pending/);
+	});
+
+	it("reports a model failure without writes", async () => {
+		const world = directWorld(async () => {
+			throw new Error("provider failed");
+		});
+		const before = world.session.manager.getEntries().length;
+		await expect(
+			prepareRangeCompression(world.ctx, {
+				operationId: "model-failure",
+				startEntryId: world.selected,
+				endEntryId: world.selected,
+			}),
+		).rejects.toThrow("provider failed");
+		expect(world.session.manager.getEntries()).toHaveLength(before);
+	});
+});
+
+describe("generic range compression service", () => {
+	function serviceWorld(complete?: (...args: unknown[]) => Promise<AssistantMessage>) {
+		const session = new MemorySession();
+		session.user("root");
+		const anchor = session.assistant("anchor");
+		const selected = session.assistant("selected");
+		const events = createEventBus();
+		const shutdownHandlers: Array<(event: unknown, ctx: ExtensionCommandContext) => unknown> = [];
+		const pi = Object.assign(mutationApi(session.manager), {
+			events,
+			on: (name: string, handler: (event: unknown, ctx: ExtensionCommandContext) => unknown) => {
+				if (name === "session_shutdown") shutdownHandlers.push(handler);
+			},
+		}) as unknown as ExtensionAPI;
+		const ctx = extensionContext(session.manager, complete);
+		registerRangeCompressionService(pi);
+		let requestNumber = 0;
+		const request = (value: RangeCompressionRequest): Promise<RangeCompressionResult> =>
+			new Promise((resolve) => {
+				const unsubscribe = events.on(RANGE_COMPRESSION_RESULT, (result) => {
+					const parsed = result as RangeCompressionResult;
+					if (parsed.requestId !== value.requestId) return;
+					unsubscribe();
+					resolve(parsed);
+				});
+				events.emit(RANGE_COMPRESSION_REQUEST, { request: value, context: ctx });
+			});
+		const prepare = (
+			operationId = "operation",
+			overrides: Partial<RangeCompressionPrepareRequest> = {},
+		): RangeCompressionPrepareRequest => ({
+			v: 1,
+			requestId: `prepare-${++requestNumber}`,
+			sessionId: session.manager.getSessionId(),
+			operationId,
+			action: "prepare",
+			startEntryId: selected,
+			endEntryId: selected,
+			review: false,
+			...overrides,
+		});
+		const action = (
+			action: "apply" | "cancel" | "status",
+			operationId = "operation",
+			overrides: { requestId?: string; sessionId?: string } = {},
+		): RangeCompressionRequest => ({
+			v: 1,
+			requestId: `${action}-${++requestNumber}`,
+			sessionId: session.manager.getSessionId(),
+			operationId,
+			action,
+			...overrides,
+		});
+		return { session, anchor, selected, events, pi, ctx, shutdownHandlers, request, prepare, action };
+	}
+
+	it("supports prepare, status, apply, replay, cancel, missing, conflict, and session checks", async () => {
+		const world = serviceWorld();
+		expect((await world.request(world.action("status"))).status).toBe("missing");
+		expect((await world.request(world.prepare())).status).toBe("prepared");
+		expect((await world.request(world.action("status"))).status).toBe("prepared");
+		expect(await world.request(world.prepare("operation", { instructions: "different" }))).toMatchObject({
+			status: "failed",
+			code: "operation_conflict",
+		});
+		const applied = await world.request(world.action("apply"));
+		expect(applied.status).toBe("applied");
+		if (applied.status === "applied") expect(applied.details.operationId).toBe("operation");
+		expect((await world.request(world.action("apply"))).status).toBe("applied");
+		expect(await world.request(world.action("apply", "missing"))).toMatchObject({
+			status: "failed",
+			code: "not_prepared",
+		});
+		expect(await world.request(world.action("status", "other", { sessionId: "other" }))).toMatchObject({
+			status: "failed",
+			code: "session_changed",
+		});
+
+		const cancelled = serviceWorld();
+		expect((await cancelled.request(cancelled.action("cancel"))).status).toBe("cancelled");
+		expect((await cancelled.request(cancelled.action("status"))).status).toBe("cancelled");
+	});
+
+	it("reuses an identical in-flight preparation and rejects conflicting data", async () => {
+		let release: (message: AssistantMessage) => void = () => {};
+		let started: () => void = () => {};
+		const entered = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const response = new Promise<AssistantMessage>((resolve) => {
+			release = resolve;
+		});
+		let calls = 0;
+		const world = serviceWorld(async () => {
+			calls += 1;
+			started();
+			return response;
+		});
+		const original = world.prepare("shared", { requestId: "first" });
+		const first = world.request(original);
+		await entered;
+		const duplicate = world.request({ ...original, requestId: "duplicate" });
+		const conflict = await world.request({ ...original, requestId: "conflict", instructions: "different" });
+		expect(conflict).toMatchObject({ status: "failed", code: "operation_conflict" });
+		release(assistantResponse("summary"));
+		expect((await first).status).toBe("prepared");
+		expect((await duplicate).status).toBe("prepared");
+		expect(calls).toBe(1);
+	});
+
+	it("aborts a pending preparation on cancel", async () => {
+		let reportSignal: (signal: AbortSignal) => void = () => {};
+		const started = new Promise<AbortSignal>((resolve) => {
+			reportSignal = resolve;
+		});
+		const world = serviceWorld(async (...args: unknown[]) => {
+			const signal = (args[2] as { signal: AbortSignal }).signal;
+			reportSignal(signal);
+			return new Promise<AssistantMessage>((_resolve, reject) => {
+				signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+			});
+		});
+		const preparing = world.request(world.prepare("cancel-pending"));
+		const signal = await started;
+		expect((await world.request(world.action("cancel", "cancel-pending"))).status).toBe("cancelled");
+		expect(signal.aborted).toBe(true);
+		expect((await preparing).status).toBe("cancelled");
+	});
+
+	it("returns busy for a concurrent session mutation", async () => {
+		const world = serviceWorld();
+		expect((await world.request(world.prepare("first"))).status).toBe("prepared");
+		expect((await world.request(world.prepare("second"))).status).toBe("prepared");
+		let enterNavigation: () => void = () => {};
+		let releaseNavigation: () => void = () => {};
+		const entered = new Promise<void>((resolve) => {
+			enterNavigation = resolve;
+		});
+		const blocked = new Promise<void>((resolve) => {
+			releaseNavigation = resolve;
+		});
+		const navigate = world.ctx.navigateTree;
+		(world.ctx as unknown as { navigateTree: ExtensionCommandContext["navigateTree"] }).navigateTree = async (
+			targetId,
+			options,
+		) => {
+			enterNavigation();
+			await blocked;
+			return navigate(targetId, options);
+		};
+		const applying = world.request(world.action("apply", "first"));
+		await entered;
+		expect(await world.request(world.action("apply", "second"))).toMatchObject({
+			status: "failed",
+			code: "busy",
+		});
+		releaseNavigation();
+		expect((await applying).status).toBe("applied");
+	});
+
+	it("aborts and removes pending state on session shutdown", async () => {
+		let reportSignal: (signal: AbortSignal) => void = () => {};
+		const started = new Promise<AbortSignal>((resolve) => {
+			reportSignal = resolve;
+		});
+		const world = serviceWorld(async (...args: unknown[]) => {
+			const signal = (args[2] as { signal: AbortSignal }).signal;
+			reportSignal(signal);
+			return new Promise<AssistantMessage>((_resolve, reject) => {
+				signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+			});
+		});
+		const preparing = world.request(world.prepare("shutdown"));
+		const signal = await started;
+		for (const handler of world.shutdownHandlers) await handler({}, world.ctx);
+		expect(signal.aborted).toBe(true);
+		expect((await preparing).status).toBe("cancelled");
+		expect((await world.request(world.action("status", "shutdown"))).status).toBe("missing");
 	});
 });
 
