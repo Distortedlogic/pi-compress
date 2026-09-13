@@ -1,4 +1,4 @@
-/tmp/pi-context-preload-tree-DLT6XC/paths.txt
+/tmp/pi-context-preload-tree-ExrXl7/paths.txt
 ├── src
 │   ├── core
 │   │   ├── consumers.ts
@@ -18,5 +18,6 @@
 ├── biome.json
 ├── .gitignore
 ├── package.json
+├── RANGE_COMPRESSION_API_TASKLIST.md
 ├── README.md
 └── tsconfig.json
