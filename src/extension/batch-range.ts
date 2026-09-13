@@ -3,7 +3,6 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@e
 import { Value } from "typebox/value";
 import {
 	type SessionEntry,
-	SessionTree,
 	isMessageEntry,
 	planRange,
 	rangeCandidates,
@@ -18,6 +17,7 @@ import {
 	CompressionDetailsSchema,
 	QUEUED_TASK_TAIL,
 } from "../protocol.ts";
+import { snapshotSession } from "../session.ts";
 
 export interface CompressionPlan {
 	operationId: string;
@@ -71,10 +71,10 @@ export function prepareCompression(
 	if (startIndex === -1) throw new Error("The completed batch has no assistant execution range.");
 	const selected = entries.slice(startIndex, endIndex + 1);
 	const selectedIds = new Set(selected.map((entry) => entry.id));
-	const tree = SessionTree.fromEntries(entries);
-	const endpoint = rangeCandidates(tree, sourceLeafId).findLast((candidate) => selectedIds.has(candidate.endEntryId));
+	const snapshot = snapshotSession(ctx.sessionManager);
+	const endpoint = rangeCandidates(snapshot).findLast((candidate) => selectedIds.has(candidate.endEntryId));
 	if (!endpoint || !entries[startIndex]) throw new Error("The execution range is not available.");
-	planRange(tree, sourceLeafId, entries[startIndex].id, endpoint.endEntryId);
+	planRange(snapshot, entries[startIndex].id, endpoint.endEntryId);
 	const source = serializeEntries(selected);
 	if (!source.trim()) throw new Error("The completed batch has no serializable execution range.");
 	const taskMessageEntry = entries[taskMessageIndex];

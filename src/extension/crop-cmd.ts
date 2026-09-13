@@ -5,18 +5,17 @@
  * (TRD §5 revised) + a ctree/crop marker. Originals stay recoverable (G4).
  */
 
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
 	CTREE_CROP,
 	CTREE_CROP_TAIL,
 	type CropPlan,
-	SessionTree,
 	autoSelect,
 	cropCandidates,
 	fmtTokens,
 	planCrop,
 	renderReconstruction,
 } from "../core/index.ts";
-import { type CmdCtxLike, type PiLike, leafIdOf } from "./adapter.ts";
 import { refreshAmbient } from "./ambient.ts";
 import { openPanel } from "./panel-cmd.ts";
 import { deriveState } from "./state.ts";
@@ -50,7 +49,7 @@ export function parseCropFlags(args: string): CropFlags {
 	return flags;
 }
 
-function notifyDryRun(ctx: CmdCtxLike, plan: CropPlan): void {
+function notifyDryRun(ctx: ExtensionCommandContext, plan: CropPlan): void {
 	const lines = plan.stubs.map((s) => `${s.tool}${s.arg ? ` ${s.arg}` : ""} ~${fmtTokens(s.estTokens)}`);
 	ctx.ui.notify(
 		`(dry-run) would crop ${plan.stubs.length}: ${lines.join(" · ")} — reclaim ~${fmtTokens(plan.reclaimTokens)}; nothing written`,
@@ -59,9 +58,9 @@ function notifyDryRun(ctx: CmdCtxLike, plan: CropPlan): void {
 }
 
 /** Apply a reviewed plan. Re-validates the leaf (TRD §6) before writing. */
-export async function applyCropPlan(pi: PiLike, ctx: CmdCtxLike, plan: CropPlan): Promise<void> {
+export async function applyCropPlan(pi: ExtensionAPI, ctx: ExtensionCommandContext, plan: CropPlan): Promise<void> {
 	await ctx.waitForIdle();
-	const leafNow = leafIdOf(ctx);
+	const leafNow = ctx.sessionManager.getLeafId();
 	if (leafNow !== plan.sourceLeafId) {
 		ctx.ui.notify("session changed while the crop panel was open — re-run /crop (nothing written)", "warning");
 		return;
@@ -71,7 +70,7 @@ export async function applyCropPlan(pi: PiLike, ctx: CmdCtxLike, plan: CropPlan)
 		return;
 	}
 	const state = deriveState(ctx);
-	const block = renderReconstruction(state.tree, plan.sourceLeafId, plan);
+	const block = renderReconstruction(state, plan);
 
 	const nav = await ctx.navigateTree(plan.anchorId, { summarize: false });
 	if (nav.cancelled) {
@@ -101,7 +100,7 @@ function cropAppliedMessage(plan: CropPlan): string {
 	return `✂ ${parts.join(" + ") || "nothing"} · ~${fmtTokens(plan.reclaimTokens)} reclaimed · originals on the previous branch`;
 }
 
-export async function cropHandler(pi: PiLike, ctx: CmdCtxLike, args: string): Promise<void> {
+export async function cropHandler(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {
 	await ctx.waitForIdle();
 	const flags = parseCropFlags(args);
 	const state = deriveState(ctx);
@@ -110,7 +109,7 @@ export async function cropHandler(pi: PiLike, ctx: CmdCtxLike, args: string): Pr
 		return;
 	}
 
-	const candidates = cropCandidates(state.tree, state.leafId);
+	const candidates = cropCandidates(state);
 	if (candidates.length === 0) {
 		ctx.ui.notify("no tool/MCP results on this branch — nothing to crop", "info");
 		return;
@@ -132,7 +131,7 @@ export async function cropHandler(pi: PiLike, ctx: CmdCtxLike, args: string): Pr
 			ctx.ui.notify("crop cancelled — nothing written", "info");
 			return;
 		}
-		const plan = planCrop(state.tree, state.leafId, [top.entryId]);
+		const plan = planCrop(state, [top.entryId]);
 		if (flags.dryRun) {
 			notifyDryRun(ctx, plan);
 			return;
@@ -156,7 +155,7 @@ export async function cropHandler(pi: PiLike, ctx: CmdCtxLike, args: string): Pr
 			ctx.ui.notify("--auto matched nothing (protected/latest results are skipped) — nothing to crop", "info");
 			return;
 		}
-		const plan = planCrop(state.tree, state.leafId, premark);
+		const plan = planCrop(state, premark);
 		if (flags.dryRun) {
 			notifyDryRun(ctx, plan);
 			return;
@@ -179,7 +178,7 @@ export async function cropHandler(pi: PiLike, ctx: CmdCtxLike, args: string): Pr
 	await applyCropPlan(pi, ctx, action.plan);
 }
 
-export function registerCrop(pi: PiLike): void {
+export function registerCrop(pi: ExtensionAPI): void {
 	pi.registerCommand("crop", {
 		description:
 			"pi-context-tree: surgically stub out huge tool/MCP results (--top for the biggest; interactive; --auto --apply --dry-run)",

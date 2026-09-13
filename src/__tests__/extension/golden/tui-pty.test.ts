@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { SessionBuilder, filler } from "../../../core/testkit.ts";
+import { PiSessionFixture, filler } from "../../session-fixture.ts";
 import { MockOpenAI } from "./mock-openai.ts";
 import { EXTENSION_ENTRY, piPath, writeMockModels } from "./rpc-driver.ts";
 
@@ -27,7 +27,7 @@ const EXPECT = ["/usr/bin/expect", "/bin/expect", "/usr/local/bin/expect"].find(
 const execFileAsync = promisify(execFile);
 
 function fixtureSession(cwd: string): string {
-	const b = new SessionBuilder(cwd);
+	const b = new PiSessionFixture(cwd);
 	b.modelChange("mock", "trunk-1");
 	b.user("build the importer");
 	b.assistant("plan: storage first", { provider: "mock", model: "trunk-1" });
@@ -151,7 +151,7 @@ describe.skipIf(!PI || !EXPECT)("real pi TUI in a PTY (mockup keymap walk)", () 
 		const baseUrl = await mock.start();
 		writeMockModels(agentDir, baseUrl, ["trunk-1"]);
 
-		const b = new SessionBuilder(cwd);
+		const b = new PiSessionFixture(cwd);
 		b.modelChange("mock", "trunk-1");
 		b.user("before range question");
 		b.assistant("before range answer", { provider: "mock", model: "trunk-1" });
@@ -258,7 +258,7 @@ describe.skipIf(!PI || !EXPECT)("real pi TUI in a PTY (mockup keymap walk)", () 
 		writeMockModels(agentDir, "http://127.0.0.1:9/v1", ["trunk-1"]);
 
 		// three clean turns; the middle one is fat and removable, the last holds the leaf (protected)
-		const b = new SessionBuilder(cwd);
+		const b = new PiSessionFixture(cwd);
 		b.modelChange("mock", "trunk-1");
 		b.user("what's a tmpdir collision?");
 		b.assistant("two workers writing the same fixture path", { provider: "mock", model: "trunk-1" });

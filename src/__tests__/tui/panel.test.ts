@@ -1,8 +1,9 @@
 import { TuiAltScreen } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import type { PanelAction } from "../../core/index.ts";
-import { SessionBuilder, filler } from "../../core/testkit.ts";
+import { type PanelAction, extractForks } from "../../core/index.ts";
+import { snapshotSession } from "../../session.ts";
 import { ContextPanel } from "../../tui/panel.ts";
+import { PiSessionFixture, filler } from "../session-fixture.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI stripping is the point
@@ -10,7 +11,7 @@ const ANSI = /\x1b\[[0-9;]*m|\x1b\]8;;[^\x07]*\x07/g;
 const strip = (s: string) => s.replace(ANSI, "");
 
 function buildInput() {
-	const b = new SessionBuilder();
+	const b = new PiSessionFixture();
 	b.user("kickoff");
 	b.assistant("plan");
 	const storage = b.fork("storage-layer");
@@ -25,13 +26,22 @@ function buildInput() {
 	b.fork("fix-flaky-test", { branchModel: "haiku-4.5" });
 	b.user("tests flake");
 	const leaf = b.assistant("root cause found");
-	return { entries: b.build().entries, snap, leaf };
+	return { b, snap, leaf };
+}
+
+function inputOf(b: PiSessionFixture, options: Record<string, unknown> = {}) {
+	return {
+		...snapshotSession(b.session),
+		forks: extractForks(b.session),
+		project: "tabwrangler",
+		...options,
+	};
 }
 
 function makePanel(actions: PanelAction[] = [], notes: string[] = []) {
-	const { entries, snap } = buildInput();
+	const { b, snap } = buildInput();
 	const panel = new ContextPanel({
-		input: { entries, project: "tabwrangler", model: "haiku-4.5", contextWindow: 200_000 },
+		input: inputOf(b, { model: "haiku-4.5", contextWindow: 200_000 }),
 		onAction: (a) => actions.push(a),
 		onNotify: (m) => notes.push(m),
 	});
@@ -55,8 +65,9 @@ describe("ContextPanel rendering", () => {
 
 	it("pads the body to maxBody so the overlay always fills its height", () => {
 		const { panel } = makePanel();
+		const shortFixture = buildInput();
 		const short = new ContextPanel({
-			input: { entries: buildInput().entries, project: "p" },
+			input: inputOf(shortFixture.b, { project: "p" }),
 			maxBody: 30,
 			onAction: () => {},
 		});
@@ -64,8 +75,9 @@ describe("ContextPanel rendering", () => {
 		// header(1) + gauge(1) + divider(1) + secthead(1) + body(30) + hint slot(1) + divider(1) + notify slot(1) + footer(1)
 		expect(lines.length).toBe(38);
 		// overflow keeps the same height: the hint slot holds the "… N more" line
+		const tallFixture = buildInput();
 		const tall = new ContextPanel({
-			input: { entries: buildInput().entries, project: "p" },
+			input: inputOf(tallFixture.b, { project: "p" }),
 			maxBody: 3,
 			onAction: () => {},
 		});
@@ -121,7 +133,7 @@ describe("ContextPanel crop flow", () => {
 
 describe("ContextPanel crop turn-mode", () => {
 	function turnPanel() {
-		const b = new SessionBuilder();
+		const b = new PiSessionFixture();
 		b.user("first question");
 		b.assistant("first answer");
 		b.user("second question — the fat one");
@@ -130,7 +142,7 @@ describe("ContextPanel crop turn-mode", () => {
 		b.user("third question");
 		b.assistant("third answer");
 		const panel = new ContextPanel({
-			input: { entries: b.build().entries, project: "p", contextWindow: 200_000 },
+			input: inputOf(b, { project: "p", contextWindow: 200_000 }),
 			onAction: () => {},
 		});
 		panel.handleInput("c"); // crop
@@ -173,7 +185,7 @@ describe("ContextPanel consumers bars", () => {
 
 describe("ContextPanel decisions cards", () => {
 	it("renders meta and epitaph rows under the record header", () => {
-		const b = new SessionBuilder();
+		const b = new PiSessionFixture();
 		b.user("kickoff");
 		b.assistant("two options");
 		const alt = b.fork("alt-b", { trunkModel: "opus-4.8", branchModel: "haiku-4.5" });
@@ -188,7 +200,7 @@ describe("ContextPanel decisions cards", () => {
 		);
 		b.close(alt, "squashed", { decisionEntryId: dec });
 		const panel = new ContextPanel({
-			input: { entries: b.build().entries, project: "p", initialView: "decisions" },
+			input: inputOf(b, { project: "p", initialView: "decisions" }),
 			onAction: () => {},
 		});
 		const text = panel.render(110).map(strip).join("\n");

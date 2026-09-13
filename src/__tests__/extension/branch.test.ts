@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type CtreeForkData, ctreeForkData } from "../../core/index.ts";
-import { branchHandler, registerBranch } from "../../extension/branch.ts";
-import { forgetCtx, rememberCtx } from "../../extension/ctx-cache.ts";
+import { branchHandler, registerBranch, rememberModels, resetModelCompletions } from "../../extension/branch.ts";
 import { entriesByType, makeFake } from "./fake-pi.ts";
 
 describe("/branch", () => {
@@ -52,11 +51,11 @@ describe("/branch", () => {
 	});
 });
 
-describe("/branch model autocomplete (remembered-ctx bridge)", () => {
+describe("/branch model autocomplete", () => {
 	it("completes the model argument from the registry seen on the last event", () => {
 		const { pi, ctx, completions } = makeFake();
 		registerBranch(pi);
-		rememberCtx(ctx); // ambient events stash the ctx — completions have no ctx param in pi 0.84.3
+		rememberModels(ctx);
 		const complete = completions.get("branch");
 		expect(complete?.("fix-x ha")?.map((c) => c.value)).toEqual(["anthropic/haiku-4.5"]);
 		expect(complete?.("fix-x anthropic/")?.map((c) => c.value)).toEqual(["anthropic/opus-4.8", "anthropic/haiku-4.5"]);
@@ -67,10 +66,10 @@ describe("/branch model autocomplete (remembered-ctx bridge)", () => {
 	it("offers nothing for the name argument or when no ctx has been seen", () => {
 		const { pi, completions } = makeFake();
 		registerBranch(pi);
-		forgetCtx();
+		resetModelCompletions();
 		const complete = completions.get("branch");
 		expect(complete?.("fix")).toBeNull(); // first arg = branch name, not a model
-		expect(complete?.("fix-x ha")).toBeNull(); // no ctx seen yet
+		expect(complete?.("fix-x ha")).toBeNull(); // no model-reference snapshot yet
 	});
 });
 

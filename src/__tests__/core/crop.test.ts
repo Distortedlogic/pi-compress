@@ -7,15 +7,15 @@ import {
 	renderRangeTail,
 	resolveRangeEndpoint,
 } from "../../core/range-compress.ts";
-import { SessionBuilder, filler } from "../../core/testkit.ts";
-import { SessionTree } from "../../core/tree.ts";
+import { snapshotEntry, snapshotSession } from "../../session.ts";
+import { PiSessionFixture, filler } from "../session-fixture.ts";
 
 /**
  * u1 → A(call rf) → rf(2k chars) → A(call snap1) → snap1(80k) → a2
  *    → A(call snap2) → snap2(64k) → A(call rt) → rt(16k) → a3 (leaf)
  */
 function scenario() {
-	const b = new SessionBuilder();
+	const b = new PiSessionFixture();
 	const u1 = b.user("audit my tabs");
 	const rf = b.toolUse("read_file", { path: "src/storage.ts" }, filler(2000));
 	const snap1 = b.toolUse("chrome.snapshot", { url: "tab-audit" }, filler(80_000, "SNAPA-"));
@@ -24,13 +24,13 @@ function scenario() {
 	const rt = b.toolUse("run_tests", {}, filler(16_000));
 	const a3 = b.assistant("done");
 	const { entries } = b.build();
-	return { tree: SessionTree.fromEntries(entries), ids: { u1, rf, snap1, a2, snap2, rt, a3 } };
+	return { tree: snapshotSession(b.session), ids: { u1, rf, snap1, a2, snap2, rt, a3 } };
 }
 
 describe("cropCandidates", () => {
 	it("lists tool results with tokens, ages, and latest-per-tool protection", () => {
 		const { tree, ids } = scenario();
-		const cands = cropCandidates(tree, ids.a3);
+		const cands = cropCandidates(tree);
 		const byId = new Map(cands.map((c) => [c.entryId, c]));
 
 		expect(cands).toHaveLength(4);
@@ -50,13 +50,13 @@ describe("cropCandidates", () => {
 describe("autoSelect", () => {
 	it("marks big, old, unprotected entries only", () => {
 		const { tree, ids } = scenario();
-		const cands = cropCandidates(tree, ids.a3);
+		const cands = cropCandidates(tree);
 		expect(autoSelect(cands, { minTokens: 10_000, olderThanTurns: 2 })).toEqual([ids.snap1]);
 	});
 
 	it("respects keep globs", () => {
 		const { tree, ids } = scenario();
-		const cands = cropCandidates(tree, ids.a3);
+		const cands = cropCandidates(tree);
 		expect(autoSelect(cands, { minTokens: 10_000, olderThanTurns: 0, keep: ["chrome.*"] })).toEqual([]);
 	});
 });
@@ -64,31 +64,31 @@ describe("autoSelect", () => {
 describe("planCrop", () => {
 	it("anchors at the parent of the earliest marked entry and computes stubs", () => {
 		const { tree, ids } = scenario();
-		const plan = planCrop(tree, ids.a3, [ids.snap1, ids.snap2]);
+		const plan = planCrop(tree, [ids.snap1, ids.snap2]);
 
-		expect(plan.anchorId).toBe(tree.get(ids.snap1)?.parentId);
+		expect(plan.anchorId).toBe(snapshotEntry(tree, ids.snap1)?.parentId);
 		expect(plan.reclaimTokens).toBe(20_000 + 16_000);
 		expect(plan.stubs).toHaveLength(2);
 		const stub = plan.stubs[0];
 		expect(stub?.tool).toBe("chrome.snapshot");
 		expect(stub?.sha8).toMatch(/^[0-9a-f]{8}$/);
 		// deterministic
-		const again = planCrop(tree, ids.a3, [ids.snap1, ids.snap2]);
+		const again = planCrop(tree, [ids.snap1, ids.snap2]);
 		expect(again.stubs[0]?.sha8).toBe(stub?.sha8);
 	});
 
 	it("rejects marks that are not on the current path", () => {
 		const { tree, ids } = scenario();
-		expect(() => planCrop(tree, ids.a3, ["nonexistent"])).toThrow(/not on the current path/);
-		expect(() => planCrop(tree, ids.a3, [ids.u1])).toThrow(/not croppable/);
+		expect(() => planCrop(tree, ["nonexistent"])).toThrow(/not on the current path/);
+		expect(() => planCrop(tree, [ids.u1])).toThrow(/not croppable/);
 	});
 });
 
 describe("renderReconstruction", () => {
 	it("keeps unmarked content, stubs marked bodies, preserves order", () => {
 		const { tree, ids } = scenario();
-		const plan = planCrop(tree, ids.a3, [ids.snap1, ids.snap2]);
-		const text = renderReconstruction(tree, ids.a3, plan);
+		const plan = planCrop(tree, [ids.snap1, ids.snap2]);
+		const text = renderReconstruction(tree, plan);
 
 		expect(text).toContain("[cropped: chrome.snapshot tab-audit");
 		expect(text).toContain("[cropped: chrome.snapshot post-suspend");
@@ -109,7 +109,7 @@ describe("renderReconstruction", () => {
 });
 
 function rangeScenario() {
-	const b = new SessionBuilder();
+	const b = new PiSessionFixture();
 	b.user("root context");
 	const anchor = b.assistant("anchor before selected range");
 	b.fork("inactive");
@@ -122,7 +122,7 @@ function rangeScenario() {
 	const leaf = b.assistant("continuation answer");
 	const { entries } = b.build();
 	return {
-		tree: SessionTree.fromEntries(entries),
+		tree: snapshotSession(b.session),
 		ids: { anchor, offPath, start, end, continuation, leaf },
 	};
 }
@@ -130,7 +130,7 @@ function rangeScenario() {
 describe("range compression planning", () => {
 	it("plans a valid range in source order", () => {
 		const { tree, ids } = rangeScenario();
-		const plan = planRange(tree, ids.leaf, ids.start, ids.end);
+		const plan = planRange(tree, ids.start, ids.end);
 
 		expect(plan.anchorId).toBe(ids.anchor);
 		expect(plan.startEntryId).toBe(ids.start);
@@ -143,12 +143,12 @@ describe("range compression planning", () => {
 
 	it("requires normalized group boundary IDs", () => {
 		const { tree, ids } = rangeScenario();
-		expect(() => planRange(tree, ids.leaf, ids.end, ids.start)).toThrow(/not normalized/);
+		expect(() => planRange(tree, ids.end, ids.start)).toThrow(/not normalized/);
 	});
 
 	it("supports a range that reaches the current leaf", () => {
 		const { tree, ids } = rangeScenario();
-		const plan = planRange(tree, ids.leaf, ids.start, ids.leaf);
+		const plan = planRange(tree, ids.start, ids.leaf);
 		expect(plan.endEntryId).toBe(ids.leaf);
 		expect(plan.continuationEntryIds).toEqual([]);
 		expect(plan.continuationSerialized).toBe("");
@@ -156,7 +156,7 @@ describe("range compression planning", () => {
 
 	it("keeps the post-range continuation in source order", () => {
 		const { tree, ids } = rangeScenario();
-		const plan = planRange(tree, ids.leaf, ids.start, ids.end);
+		const plan = planRange(tree, ids.start, ids.end);
 		expect(plan.continuationEntryIds).toEqual([ids.continuation, ids.leaf]);
 		expect(plan.continuationSerialized.indexOf("continuation question")).toBeLessThan(
 			plan.continuationSerialized.indexOf("continuation answer"),
@@ -165,9 +165,9 @@ describe("range compression planning", () => {
 
 	it("rejects missing and off-path IDs", () => {
 		const { tree, ids } = rangeScenario();
-		const candidates = rangeCandidates(tree, ids.leaf);
-		expect(() => planRange(tree, ids.leaf, "missing", ids.end)).toThrow(/not found/);
-		expect(() => planRange(tree, ids.leaf, ids.offPath, ids.end)).toThrow(/active context path/);
+		const candidates = rangeCandidates(tree);
+		expect(() => planRange(tree, "missing", ids.end)).toThrow(/not found/);
+		expect(() => planRange(tree, ids.offPath, ids.end)).toThrow(/active context path/);
 		expect(resolveRangeEndpoint(candidates, ids.offPath, "start")).toEqual({
 			ok: false,
 			reason: "entry is not in the active context",
@@ -175,7 +175,7 @@ describe("range compression planning", () => {
 	});
 
 	it("protects decision records", () => {
-		const b = new SessionBuilder();
+		const b = new PiSessionFixture();
 		b.user("root");
 		b.assistant("anchor");
 		const decision = b.customMessage("ctree/decision", "## Decision: keep this", true, {
@@ -184,41 +184,41 @@ describe("range compression planning", () => {
 			branchName: "protected",
 		});
 		const leaf = b.assistant("after decision");
-		const tree = SessionTree.fromEntries(b.build().entries);
+		const tree = snapshotSession(b.session);
 
-		const candidates = rangeCandidates(tree, leaf);
+		const candidates = rangeCandidates(tree);
 		expect(candidates.find((candidate) => candidate.id === decision)?.protectReason).toBe("decision record");
 		expect(resolveRangeEndpoint(candidates, decision, "start")).toEqual({
 			ok: false,
 			reason: "decision record",
 		});
-		expect(() => planRange(tree, leaf, decision, decision)).toThrow(/protected: decision record/);
+		expect(() => planRange(tree, decision, decision)).toThrow(/protected: decision record/);
 	});
 
 	it("protects an incomplete current user turn", () => {
-		const b = new SessionBuilder();
+		const b = new PiSessionFixture();
 		b.user("root");
 		b.assistant("anchor");
 		const current = b.user("unfinished request");
-		const tree = SessionTree.fromEntries(b.build().entries);
-		const candidate = rangeCandidates(tree, current).find((item) => item.id === current);
+		const tree = snapshotSession(b.session);
+		const candidate = rangeCandidates(tree).find((item) => item.id === current);
 
 		expect(candidate?.protected).toBe(true);
 		expect(candidate?.protectReason).toBe("incomplete current user turn");
-		expect(() => planRange(tree, current, current, current)).toThrow(/incomplete current user turn/);
+		expect(() => planRange(tree, current, current)).toThrow(/incomplete current user turn/);
 	});
 
 	it("keeps an assistant tool call and its result in one safe group", () => {
-		const b = new SessionBuilder();
+		const b = new PiSessionFixture();
 		b.user("root");
 		b.assistant("anchor");
 		const result = b.toolUse("read_file", { path: "src/a.ts" }, "file body");
 		const leaf = b.assistant("tool work complete");
-		const tree = SessionTree.fromEntries(b.build().entries);
-		const call = tree.get(result)?.parentId;
+		const tree = snapshotSession(b.session);
+		const call = snapshotEntry(tree, result)?.parentId;
 		expect(call).toBeTruthy();
 		const callId = call as string;
-		const candidates = rangeCandidates(tree, leaf);
+		const candidates = rangeCandidates(tree);
 		const candidate = candidates.find((item) => item.id === callId);
 		const byEntryId = candidateByEntryId(candidates);
 
@@ -228,22 +228,22 @@ describe("range compression planning", () => {
 		expect(byEntryId.get(result)).toBe(candidate);
 		expect(resolveRangeEndpoint(candidates, result, "start")).toEqual({ ok: true, entryId: callId });
 		expect(resolveRangeEndpoint(candidates, callId, "end")).toEqual({ ok: true, entryId: result });
-		expect(planRange(tree, leaf, callId, result).selectedEntryIds).toEqual([callId, result]);
-		expect(() => planRange(tree, leaf, result, result)).toThrow(/range start.*split/);
-		expect(() => planRange(tree, leaf, callId, callId)).toThrow(/range end.*split/);
+		expect(planRange(tree, callId, result).selectedEntryIds).toEqual([callId, result]);
+		expect(() => planRange(tree, result, result)).toThrow(/range start.*split/);
+		expect(() => planRange(tree, callId, callId)).toThrow(/range end.*split/);
 	});
 
 	it("computes a stable selected-source hash", () => {
 		const { tree, ids } = rangeScenario();
-		const first = planRange(tree, ids.leaf, ids.start, ids.end);
-		const second = planRange(tree, ids.leaf, ids.start, ids.end);
+		const first = planRange(tree, ids.start, ids.end);
+		const second = planRange(tree, ids.start, ids.end);
 		expect(first.sourceSha8).toMatch(/^[0-9a-f]{8}$/);
 		expect(second.sourceSha8).toBe(first.sourceSha8);
 	});
 
 	it("renders the approved summary and continuation without selected source text", () => {
 		const { tree, ids } = rangeScenario();
-		const plan = planRange(tree, ids.leaf, ids.start, ids.end);
+		const plan = planRange(tree, ids.start, ids.end);
 		const rebuilt = renderRangeTail(plan, "Approved compact summary");
 
 		expect(rebuilt).toContain("Approved compact summary");

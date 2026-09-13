@@ -1,60 +1,84 @@
-/**
- * In-memory fake of the pi surface our commands use (adapter.ts interfaces).
- * Mirrors pi's append semantics: every append is a child of the current leaf;
- * navigateTree moves the leaf.
- */
+import type { Model } from "@earendil-works/pi-ai";
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+	ExtensionUIContext,
+	SessionEntry,
+} from "@earendil-works/pi-coding-agent";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 
-import type { AgentMessage, SessionEntry } from "../../core/index.ts";
-import type { CmdCtxLike, CtxLike, ModelLike, PiLike, UiLike } from "../../extension/adapter.ts";
+export type ModelLike = Model<any>;
+export type UiLike = ExtensionUIContext;
 
 export class FakeSession {
-	entries: SessionEntry[] = [];
-	leaf: string | null = null;
-	private seq = 0;
+	readonly manager = SessionManager.inMemory("/test/project");
 
-	append(fields: Record<string, unknown>): string {
-		this.seq += 1;
-		const id = `x${String(this.seq).padStart(3, "0")}`;
-		const entry = {
-			...fields,
-			id,
-			parentId: this.leaf,
-			timestamp: new Date(1760000000000 + this.seq * 60_000).toISOString(),
-		} as unknown as SessionEntry;
-		this.entries.push(entry);
-		this.leaf = id;
-		return id;
+	get entries(): SessionEntry[] {
+		return this.manager.getEntries();
 	}
 
-	message(message: AgentMessage): string {
-		return this.append({ type: "message", message });
+	get leaf(): string | null {
+		return this.manager.getLeafId();
+	}
+
+	append(fields: Record<string, unknown>): string {
+		if (fields.type === "message") return this.manager.appendMessage(fields.message as never);
+		if (fields.type === "custom") {
+			return this.manager.appendCustomEntry(fields.customType as string, fields.data);
+		}
+		if (fields.type === "custom_message") {
+			return this.manager.appendCustomMessageEntry(
+				fields.customType as string,
+				fields.content as never,
+				fields.display as boolean,
+				fields.details,
+			);
+		}
+		throw new Error(`Unsupported fake entry type: ${String(fields.type)}`);
+	}
+
+	message(message: Record<string, unknown>): string {
+		return this.manager.appendMessage(message as never);
 	}
 
 	user(text: string): string {
-		return this.message({ role: "user", content: text });
+		return this.manager.appendMessage({ role: "user", content: text, timestamp: Date.now() });
 	}
 
 	assistant(text: string): string {
-		return this.message({
+		return this.manager.appendMessage({
 			role: "assistant",
 			content: [{ type: "text", text }],
+			api: "openai-completions",
 			provider: "anthropic",
 			model: "opus-4.8",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: Date.now(),
 		});
 	}
 
 	toolResult(toolName: string, text: string): string {
-		return this.message({
+		return this.manager.appendMessage({
 			role: "toolResult",
-			toolCallId: `c${this.seq + 1}`,
+			toolCallId: `c${this.entries.length + 1}`,
 			toolName,
 			content: [{ type: "text", text }],
 			isError: false,
+			timestamp: Date.now(),
 		});
 	}
 
 	at(id: string): void {
-		this.leaf = id;
+		this.manager.branch(id);
 	}
 }
 
@@ -106,8 +130,8 @@ export class FakeUi {
 }
 
 export interface FakeWorld {
-	pi: PiLike;
-	ctx: CmdCtxLike;
+	pi: ExtensionAPI;
+	ctx: ExtensionCommandContext;
 	ui: FakeUi;
 	session: FakeSession;
 	calls: {
@@ -115,9 +139,9 @@ export interface FakeWorld {
 		setModel: ModelLike[];
 		labels: [string, string | undefined][];
 	};
-	commands: Map<string, (args: string, ctx: CmdCtxLike) => Promise<void> | void>;
+	commands: Map<string, (args: string, ctx: ExtensionCommandContext) => Promise<void> | void>;
 	completions: Map<string, ((prefix: string) => { value: string; label?: string }[] | null) | undefined>;
-	shortcuts: Map<string, (ctx: CtxLike) => Promise<void> | void>;
+	shortcuts: Map<string, (ctx: ExtensionContext) => Promise<void> | void>;
 }
 
 function fakeModel(provider: string, id: string, contextWindow: number): ModelLike {
@@ -145,12 +169,12 @@ export function makeFake(): FakeWorld {
 	const ui = new FakeUi();
 	const session = new FakeSession();
 	const calls: FakeWorld["calls"] = { navigate: [], setModel: [], labels: [] };
-	const commands = new Map<string, (args: string, ctx: CmdCtxLike) => Promise<void> | void>();
-	const shortcuts = new Map<string, (ctx: CtxLike) => Promise<void> | void>();
+	const commands = new Map<string, (args: string, ctx: ExtensionCommandContext) => Promise<void> | void>();
+	const shortcuts = new Map<string, (ctx: ExtensionContext) => Promise<void> | void>();
 	const completions: FakeWorld["completions"] = new Map();
 	let currentModel: ModelLike = KNOWN_MODELS[0] as ModelLike;
 
-	const pi: PiLike = {
+	const pi = {
 		registerCommand: (name, opts) => {
 			commands.set(name, (args, ctx) => opts.handler(args, ctx as never));
 			completions.set(
@@ -176,35 +200,40 @@ export function makeFake(): FakeWorld {
 			return true;
 		},
 		getSessionName: () => undefined,
-	};
+	} satisfies Partial<ExtensionAPI>;
 
-	const ctx: CmdCtxLike = {
+	const ctx = {
 		ui: ui as unknown as UiLike,
-		sessionManager: {
-			getEntries: () => session.entries as never,
-			getTree: () => [] as never,
-			getBranch: () => session.entries as never,
-			getEntry: (entryId) => session.entries.find((entry) => entry.id === entryId) as never,
-			getLeafId: () => session.leaf,
-		},
+		sessionManager: session.manager,
 		get model() {
 			return currentModel;
 		},
 		modelRegistry: {
-			find: (provider, id) => KNOWN_MODELS.find((m) => m.provider === provider && m.id === id),
+			find: (provider: string, id: string) => KNOWN_MODELS.find((m) => m.provider === provider && m.id === id),
 			getAll: () => KNOWN_MODELS,
 			complete: async () => ({ content: [] }) as never,
 		},
+		cwd: "/test/project",
+		mode: "tui",
+		hasUI: true,
+		isIdle: () => true,
+		isProjectTrusted: () => true,
+		signal: undefined,
+		abort: () => {},
+		hasPendingMessages: () => false,
+		shutdown: () => {},
+		compact: () => {},
+		getSystemPrompt: () => "",
 		waitForIdle: async () => {},
-		navigateTree: async (target, options) => {
+		navigateTree: async (target: string, options?: { summarize?: boolean }) => {
 			calls.navigate.push({ target, options });
 			session.at(target);
 			return { cancelled: false };
 		},
 		getContextUsage: () => ({ tokens: 1200, contextWindow: 200_000, percent: 0.6 }),
-	};
+	} as unknown as ExtensionCommandContext;
 
-	return { pi, ctx, ui, session, calls, commands, completions, shortcuts };
+	return { pi: pi as unknown as ExtensionAPI, ctx, ui, session, calls, commands, completions, shortcuts };
 }
 
 export function entriesByType(session: FakeSession, type: string, customType?: string): SessionEntry[] {

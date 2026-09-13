@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CtreeCloseData } from "../../core/index.ts";
-import type { Deps } from "../../extension/adapter.ts";
 import { branchHandler } from "../../extension/branch.ts";
+import type { Deps } from "../../extension/draft.ts";
 import { mergeHandler } from "../../extension/merge.ts";
 import { type FakeWorld, entriesByType, makeFake } from "./fake-pi.ts";
 

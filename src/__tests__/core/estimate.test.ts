@@ -8,12 +8,12 @@ import {
 	estimateEntryTokens,
 	fmtTokens,
 } from "../../core/estimate.ts";
-import { SessionBuilder, filler } from "../../core/testkit.ts";
-import { SessionTree, contextSlice } from "../../core/tree.ts";
 import type { SessionEntry } from "../../core/types.ts";
+import { snapshotSession } from "../../session.ts";
+import { PiSessionFixture, filler } from "../session-fixture.ts";
 
-function entryOf(build: (b: SessionBuilder) => void): SessionEntry {
-	const b = new SessionBuilder();
+function entryOf(build: (b: PiSessionFixture) => void): SessionEntry {
+	const b = new PiSessionFixture();
 	build(b);
 	const { entries } = b.build();
 	const last = entries[entries.length - 1];
@@ -65,7 +65,14 @@ describe("entryChars / estimateEntryTokens", () => {
 	it("counts zero for non-context entries", () => {
 		expect(entryChars(entryOf((b) => b.custom("ctree/fork", { v: 1 })))).toBe(0);
 		expect(entryChars(entryOf((b) => b.modelChange("anthropic", "haiku-4.5")))).toBe(0);
-		expect(entryChars(entryOf((b) => b.label("x", "name")))).toBe(0);
+		expect(
+			entryChars(
+				entryOf((b) => {
+					const target = b.user("x");
+					b.label(target, "name");
+				}),
+			),
+		).toBe(0);
 	});
 
 	it("rounds tokens up", () => {
@@ -76,13 +83,24 @@ describe("entryChars / estimateEntryTokens", () => {
 
 describe("estimateContextTokens", () => {
 	it("sums the slice", () => {
-		const b = new SessionBuilder();
+		const b = new PiSessionFixture();
 		b.user(filler(400));
 		b.assistant(filler(400));
-		const leaf = b.toolResult("read_file", filler(800));
-		const tree = SessionTree.fromEntries(b.build().entries);
-		const slice = contextSlice(tree, leaf);
-		expect(estimateContextTokens(slice)).toBe(100 + 100 + 200);
+		b.toolResult("read_file", filler(800));
+		const snapshot = snapshotSession(b.session);
+		expect(estimateContextTokens(snapshot.contextEntries)).toBe(100 + 100 + 200);
+	});
+
+	it("uses Pi's compaction-aware context entries", () => {
+		const b = new PiSessionFixture();
+		b.user("summarized history");
+		const kept = b.user("kept request");
+		b.assistant("kept answer");
+		b.compaction("compact summary", kept, 1_000);
+
+		const snapshot = snapshotSession(b.session);
+		expect(snapshot.contextEntries[0]?.type).toBe("compaction");
+		expect(snapshot.contextEntries.map((entry) => entry.id)).toContain(kept);
 	});
 });
 
@@ -110,31 +128,31 @@ describe("fmtTokens", () => {
 
 describe("aggregateConsumers", () => {
 	it("groups by tool and role, sorted by tokens desc, with shares", () => {
-		const b = new SessionBuilder();
+		const b = new PiSessionFixture();
 		b.user(filler(100));
 		b.toolUse("chrome.snapshot", { url: "tabs" }, filler(8000));
 		b.toolUse("chrome.snapshot", { url: "tabs2" }, filler(4000));
 		b.toolUse("run_tests", {}, filler(2000));
 		const leaf = b.assistant(filler(400));
-		const tree = SessionTree.fromEntries(b.build().entries);
-		const rows = aggregateConsumers(contextSlice(tree, leaf));
+		const tree = snapshotSession(b.session);
+		const rows = aggregateConsumers(tree.contextEntries);
 
 		expect(rows[0]?.key).toBe("chrome.snapshot");
 		expect(rows[0]?.entries).toBe(2);
 		expect(rows[0]?.tokens).toBe(3000);
 		const total = rows.reduce((s, r) => s + r.tokens, 0);
 		expect(Math.abs(rows.reduce((s, r) => s + r.share, 0) - 1)).toBeLessThan(1e-9);
-		expect(total).toBe(estimateContextTokens(contextSlice(tree, leaf)));
+		expect(total).toBe(estimateContextTokens(tree.contextEntries));
 	});
 
 	it("labels decision records and crop stubs distinctly", () => {
-		const b = new SessionBuilder();
+		const b = new PiSessionFixture();
 		b.user("q");
 		b.customMessage("ctree/decision", filler(400));
 		b.customMessage("ctree/crop-tail", filler(200));
 		const leaf = b.assistant("a");
-		const tree = SessionTree.fromEntries(b.build().entries);
-		const keys = aggregateConsumers(contextSlice(tree, leaf)).map((r) => r.key);
+		const tree = snapshotSession(b.session);
+		const keys = aggregateConsumers(tree.contextEntries).map((r) => r.key);
 		expect(keys).toContain("decision records");
 		expect(keys).toContain("crop stubs");
 	});

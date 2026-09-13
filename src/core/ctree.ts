@@ -1,5 +1,5 @@
 /**
- * ctree semantics over a SessionTree: fork extraction, status derivation,
+ * ctree semantics over Pi session branches: fork extraction, status derivation,
  * tournament siblings, nearest-open-fork, decisions listing.
  *
  * status      = open | squashed | rejected | discarded   (from close markers)
@@ -9,15 +9,8 @@
  *   discarded renders with the rejected color but keeps its own status.
  */
 
-import type { SessionTree } from "./tree.ts";
-import type {
-	CtreeCloseData,
-	CtreeCloseStatus,
-	CtreeForkData,
-	CustomEntry,
-	CustomMessageEntry,
-	SessionEntry,
-} from "./types.ts";
+import type { CustomEntry, CustomMessageEntry, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { CtreeCloseData, CtreeCloseStatus, CtreeForkData } from "./types.ts";
 import { CTREE_DECISION, CTREE_FORK, ctreeCloseData, ctreeForkData, isCustomMessageEntry } from "./types.ts";
 
 export type ForkStatus = "open" | CtreeCloseStatus;
@@ -35,24 +28,37 @@ export interface ForkInfo {
 	depth: number;
 }
 
-export function extractForks(tree: SessionTree, leafId: string): ForkInfo[] {
+type SessionManagerView = ExtensionContext["sessionManager"];
+
+export function extractForks(session: SessionManagerView): ForkInfo[] {
+	const entries = session.getEntries();
 	const closes = new Map<string, { entryId: string; data: CtreeCloseData }>();
-	for (const e of tree.entriesInFileOrder) {
-		const close = ctreeCloseData(e);
-		if (close) closes.set(close.forkEntryId, { entryId: e.id, data: close }); // later wins
+	for (const entry of entries) {
+		const close = ctreeCloseData(entry);
+		if (close) closes.set(close.forkEntryId, { entryId: entry.id, data: close });
 	}
 
+	const currentBranchIds = new Set(session.getBranch().map((entry) => entry.id));
 	const forks: ForkInfo[] = [];
-	for (const e of tree.entriesInFileOrder) {
-		const data = ctreeForkData(e);
+	for (const entry of entries) {
+		const data = ctreeForkData(entry);
 		if (!data) continue;
-		const close = closes.get(e.id);
+		const close = closes.get(entry.id);
 		const status: ForkStatus = close ? close.data.status : "open";
-		const onCurrentPath = tree.isAncestorOrSelf(e.id, leafId);
+		const onCurrentPath = currentBranchIds.has(entry.id);
 		const presentation: ForkPresentation =
 			status === "open" ? (onCurrentPath ? "active" : "dangling") : status === "squashed" ? "squashed" : "rejected";
-		const depth = tree.pathToRoot(e.id).filter((p) => ctreeForkData(p)).length;
-		forks.push({ entryId: e.id, entry: e as CustomEntry, data, close, status, presentation, onCurrentPath, depth });
+		const depth = session.getBranch(entry.id).filter((parent) => ctreeForkData(parent)).length;
+		forks.push({
+			entryId: entry.id,
+			entry: entry as CustomEntry,
+			data,
+			close,
+			status,
+			presentation,
+			onCurrentPath,
+			depth,
+		});
 	}
 	return forks;
 }
@@ -67,9 +73,11 @@ export function siblingForks(forks: ForkInfo[], forkEntryId: string): ForkInfo[]
 }
 
 /** Closest open fork walking leaf→root; undefined when on a clean trunk (F2.1). */
-export function nearestOpenFork(tree: SessionTree, leafId: string, forks: ForkInfo[]): ForkInfo | undefined {
-	const byId = new Map(forks.map((f) => [f.entryId, f]));
-	for (const entry of tree.pathToRoot(leafId)) {
+export function nearestOpenFork(branch: readonly SessionEntry[], forks: ForkInfo[]): ForkInfo | undefined {
+	const byId = new Map(forks.map((fork) => [fork.entryId, fork]));
+	for (let index = branch.length - 1; index >= 0; index--) {
+		const entry = branch[index];
+		if (!entry) continue;
 		const fork = byId.get(entry.id);
 		if (fork?.status === "open") return fork;
 	}
@@ -77,10 +85,10 @@ export function nearestOpenFork(tree: SessionTree, leafId: string, forks: ForkIn
 }
 
 /** ctree/decision records visible from the leaf, in root→leaf order (F7). */
-export function decisionsOnPath(tree: SessionTree, leafId: string): CustomMessageEntry[] {
-	return tree
-		.pathFromRoot(leafId)
-		.filter((e): e is CustomMessageEntry => isCustomMessageEntry(e) && e.customType === CTREE_DECISION);
+export function decisionsOnPath(branch: readonly SessionEntry[]): CustomMessageEntry[] {
+	return branch.filter(
+		(entry): entry is CustomMessageEntry => isCustomMessageEntry(entry) && entry.customType === CTREE_DECISION,
+	);
 }
 
 /** All ctree/fork entries in file order (forest + panel listing). */

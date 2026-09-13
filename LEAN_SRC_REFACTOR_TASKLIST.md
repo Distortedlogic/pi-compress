@@ -121,27 +121,27 @@ src/
 
 **Depends on:** WU-02
 
-- [ ] Delete the copied Pi message and session interfaces.
-- [ ] Import public Pi types, or derive an entry type from `sessionManager.getEntries()` when no direct export exists.
-- [ ] Delete `adapter.ts`; use `ExtensionAPI`, `ExtensionContext`, and `ExtensionCommandContext` directly.
-- [ ] Delete `ctx-cache.ts`; never store a Pi context after an event or command ends.
-- [ ] Cache only plain model reference strings for command completion.
-- [ ] Replace custom live-session tree and context reconstruction with:
-  - [ ] `getBranch()` for ancestry and active-path work.
-  - [ ] `buildContextEntries()` for the compaction-aware active context.
-  - [ ] `getTree()` for display and selection.
-  - [ ] `getEntry()` and `getLeafId()` for validation.
-- [ ] Use Pi AI `contentText` for normal content extraction.
-- [ ] Keep one local serializer only for extension summary prompts and source hashes.
-- [ ] Keep one local per-entry `chars / 4` estimator because Pi does not expose a provider-neutral per-entry count.
-- [ ] Use `ctx.getContextUsage()` whenever Pi has a real total.
-- [ ] Remove `forest.ts`, the standalone JSONL reader, the custom test session builder, and their tests unless a declared public entry point or documented command uses them.
-- [ ] If offline reading is a required public feature, use `SessionManager.inMemory()` and `SessionManager.listAll()` in one `src/session.ts` path instead of maintaining a second session model.
+- [x] Delete the copied Pi message and session interfaces.
+- [x] Import public Pi types, or derive an entry type from `sessionManager.getEntries()` when no direct export exists.
+- [x] Delete `adapter.ts`; use `ExtensionAPI`, `ExtensionContext`, and `ExtensionCommandContext` directly.
+- [x] Delete `ctx-cache.ts`; never store a Pi context after an event or command ends.
+- [x] Cache only plain model reference strings for command completion.
+- [x] Replace custom live-session tree and context reconstruction with:
+  - [x] `getBranch()` for ancestry and active-path work.
+  - [x] `buildContextEntries()` for the compaction-aware active context.
+  - [x] `getTree()` for display and selection.
+  - [x] `getEntry()` and `getLeafId()` for validation.
+- [x] Use Pi AI `contentText` for normal content extraction.
+- [x] Keep one local serializer only for extension summary prompts and source hashes.
+- [x] Keep one local per-entry `chars / 4` estimator because Pi does not expose a provider-neutral per-entry count.
+- [x] Use `ctx.getContextUsage()` whenever Pi has a real total.
+- [x] Remove `forest.ts`, the standalone JSONL reader, the custom test session builder, and their tests unless a declared public entry point or documented command uses them.
+- [x] If offline reading is a required public feature, use `SessionManager.inMemory()` and `SessionManager.listAll()` in one `src/session.ts` path instead of maintaining a second session model.
 
 **Gate**
 
-- [ ] Live extension code has no copied Pi session model and no retained stale context.
-- [ ] Existing sessions, including compacted and branched sessions, still load.
+- [x] Live extension code has no copied Pi session model and no retained stale context.
+- [x] Existing sessions, including compacted and branched sessions, still load.
 
 ### WU-04 — Make schemas the single source for durable data
 

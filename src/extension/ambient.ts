@@ -14,10 +14,10 @@
  * ours, no conflict.
  */
 
-import { aggregateConsumers, band, contextSlice, estimateContextTokens } from "../core/index.ts";
+import { basename } from "node:path";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { aggregateConsumers, band, estimateContextTokens } from "../core/index.ts";
 import { defaultTheme, renderGauge } from "../tui/index.ts";
-import { type CtxLike, type PiLike, projectName } from "./adapter.ts";
-import { rememberCtx } from "./ctx-cache.ts";
 import { type SessionState, deriveState } from "./state.ts";
 
 let warnedRed = false;
@@ -66,7 +66,7 @@ function trendMarker(pct: number, estimated: boolean, consumers: Map<string, num
 	return out;
 }
 
-function nudgeOnRed(ctx: CtxLike, b: string): void {
+function nudgeOnRed(ctx: ExtensionContext, b: string): void {
 	if (b === "red" && !warnedRed) {
 		warnedRed = true;
 		ctx.ui.notify(
@@ -77,8 +77,7 @@ function nudgeOnRed(ctx: CtxLike, b: string): void {
 	if (b !== "red") warnedRed = false;
 }
 
-export function refreshAmbient(pi: PiLike, ctx: CtxLike): void {
-	rememberCtx(ctx); // feeds argument completions (ctx-cache.ts)
+export function refreshAmbient(_pi: ExtensionAPI, ctx: ExtensionContext): void {
 	let state: SessionState | undefined;
 	try {
 		state = deriveState(ctx);
@@ -92,7 +91,7 @@ export function refreshAmbient(pi: PiLike, ctx: CtxLike): void {
 
 	// One (tokens, pct, estimated) measurement — pi's real count if it has one, else chars/4.
 	// The slice feeds both the estimate and the consumer breakdown used for attribution.
-	const slice = state?.leafId ? contextSlice(state.tree, state.leafId) : undefined;
+	const slice = state?.contextEntries;
 	const consumers = slice
 		? new Map(aggregateConsumers(slice).map((r) => [r.key, r.tokens] as [string, number]))
 		: undefined;
@@ -121,23 +120,23 @@ export function refreshAmbient(pi: PiLike, ctx: CtxLike): void {
 	}
 
 	ctx.ui.setStatus("ctree", `⎇ ${branch} · ${gaugeText}`);
-	ctx.ui.setTitle(`${projectName()}${branch !== "trunk" ? ` (${branch})` : ""} (pi)`);
+	ctx.ui.setTitle(`${basename(ctx.cwd)}${branch !== "trunk" ? ` (${branch})` : ""} (pi)`);
 
 	// G1: colored context-health gauge bar above the prompt (green→red, band-ticked)
-	if (ctx.ui.setWidget && window && window > 0) {
+	if (window && window > 0) {
 		const bar = renderGauge({ tokens: gaugeTokens, window, estimated, barWidth: 28 }, defaultTheme);
 		ctx.ui.setWidget("ctree-gauge", [` ${bar}${trend}`], { placement: "aboveEditor" });
 	}
 }
 
-export function registerAmbient(pi: PiLike): void {
-	pi.on?.("session_start", (_e, ctx) => {
+export function registerAmbient(pi: ExtensionAPI): void {
+	pi.on("session_start", (_e, ctx) => {
 		resetAmbient();
 		refreshAmbient(pi, ctx);
 	});
-	pi.on?.("turn_end", (_e, ctx) => refreshAmbient(pi, ctx));
-	pi.on?.("session_tree", (_e, ctx) => refreshAmbient(pi, ctx));
-	pi.on?.("session_before_compact", (_e, ctx) => {
+	pi.on("turn_end", (_e, ctx) => refreshAmbient(pi, ctx));
+	pi.on("session_tree", (_e, ctx) => refreshAmbient(pi, ctx));
+	pi.on("session_before_compact", (_e, ctx) => {
 		ctx.ui.notify(
 			"heads-up: /compact replaces source material with a lossy summary — pi-context-tree prefers /branch + /merge (decision records), /compress (reviewed range summaries), or /crop. Continuing anyway (F5.4).",
 			"warning",

@@ -1,8 +1,19 @@
 /** Decision-record drafting through Pi's public model registry. */
 
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { estimateTextTokens } from "../core/index.ts";
-import type { CmdCtxLike, DraftFn, ModelLike } from "./adapter.ts";
-import { resolveModel } from "./adapter.ts";
+import { type ModelLike, resolveModel } from "./state.ts";
+
+export type DraftFn = (
+	ctx: ExtensionCommandContext,
+	modelRef: string | undefined,
+	system: string,
+	user: string,
+) => Promise<string>;
+
+export interface Deps {
+	draft: DraftFn;
+}
 
 export const DRAFT_SYSTEM_PROMPT = [
 	"You write terse engineering decision records for a coding-agent session.",
@@ -71,7 +82,7 @@ export function rangeCompressionUserPrompt(selectedSerialized: string, instructi
 		.join("\n\n");
 }
 
-function assertRangeSummaryFits(ctx: CmdCtxLike, userPrompt: string): void {
+function assertRangeSummaryFits(ctx: ExtensionCommandContext, userPrompt: string): void {
 	if (!ctx.model) throw new Error("cannot check the selected range size because no current model is available");
 	const contextWindow = ctx.model.contextWindow ?? ctx.getContextUsage?.()?.contextWindow;
 	const modelRef = `${ctx.model.provider}/${ctx.model.id}`;
@@ -93,7 +104,7 @@ function assertRangeSummaryFits(ctx: CmdCtxLike, userPrompt: string): void {
 /** Draft with the current model by leaving DraftFn's model reference undefined. */
 export async function draftRangeSummary(
 	draft: DraftFn,
-	ctx: CmdCtxLike,
+	ctx: ExtensionCommandContext,
 	selectedSerialized: string,
 	instructions?: string,
 ): Promise<string> {

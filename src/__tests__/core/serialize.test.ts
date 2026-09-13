@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { serializeEntries, serializeEntry } from "../../core/serialize.ts";
-import { SessionBuilder, filler } from "../../core/testkit.ts";
+import { PiSessionFixture, filler } from "../session-fixture.ts";
 
 describe("serializeEntry", () => {
 	it("renders role-prefixed lines", () => {
-		const b = new SessionBuilder();
+		const b = new PiSessionFixture();
 		b.user("hello");
 		b.toolUse("read_file", { path: "a.ts" }, "body");
 		const { entries } = b.build();
@@ -15,7 +15,7 @@ describe("serializeEntry", () => {
 
 describe("serializeEntries", () => {
 	it("caps per-entry size for summarizer prompts (pi parity 2000 chars)", () => {
-		const b = new SessionBuilder();
+		const b = new PiSessionFixture();
 		b.user("q");
 		b.toolUse("read_file", { path: "a.ts" }, filler(10_000));
 		b.assistant("a");

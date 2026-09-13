@@ -6,21 +6,21 @@
  */
 
 import { writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	type CtreeDecisionDetails,
 	type PanelAction,
 	type PanelInput,
 	type PanelView,
-	SessionTree,
 	decisionsOnPath,
 	exportDecisionsMarkdown,
 	textOfContent,
 } from "../core/index.ts";
 import { ContextPanel } from "../tui/index.ts";
-import { type CmdCtxLike, type CtxLike, type Deps, type PiLike, leafIdOf, projectName } from "./adapter.ts";
-import { entriesOf } from "./adapter.ts";
 import { branchHandler } from "./branch.ts";
+import type { Deps } from "./draft.ts";
+import { deriveState } from "./state.ts";
 
 export interface PanelOpenOptions {
 	initialView?: PanelView;
@@ -29,13 +29,18 @@ export interface PanelOpenOptions {
 	readOnly?: boolean;
 }
 
-export function buildPanelInput(pi: PiLike, ctx: CtxLike, opts: PanelOpenOptions = {}): PanelInput {
-	const usage = ctx.getContextUsage?.();
+export function buildPanelInput(pi: ExtensionAPI, ctx: ExtensionContext, opts: PanelOpenOptions = {}): PanelInput {
+	const usage = ctx.getContextUsage();
+	const state = deriveState(ctx);
 	return {
-		entries: entriesOf(ctx),
-		leafId: leafIdOf(ctx),
-		project: projectName(),
-		sessionName: pi.getSessionName?.(),
+		entries: state.entries,
+		branch: state.branch,
+		contextEntries: state.contextEntries,
+		tree: state.tree,
+		forks: state.forks,
+		leafId: state.leafId,
+		project: basename(ctx.cwd),
+		sessionName: pi.getSessionName(),
 		model: ctx.model?.id,
 		contextWindow: ctx.model?.contextWindow ?? usage?.contextWindow,
 		usageTokens: usage ? usage.tokens : undefined,
@@ -48,8 +53,8 @@ export function buildPanelInput(pi: PiLike, ctx: CtxLike, opts: PanelOpenOptions
 
 /** Mount the panel as an overlay; resolves with the action that closed it. */
 export async function openPanel(
-	pi: PiLike,
-	ctx: CtxLike,
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
 	opts: PanelOpenOptions = {},
 ): Promise<PanelAction | undefined> {
 	if (!ctx.ui.custom) {
@@ -72,16 +77,13 @@ export async function openPanel(
 	return action;
 }
 
-function isCmdCtx(ctx: CtxLike): ctx is CmdCtxLike {
-	return typeof (ctx as CmdCtxLike).navigateTree === "function";
+function isCommandContext(ctx: ExtensionContext): ctx is ExtensionCommandContext {
+	return "navigateTree" in ctx;
 }
 
 /** /decisions without a TUI host (RPC/headless): compact text listing, newest first. */
-function notifyDecisions(ctx: CtxLike): void {
-	const entries = entriesOf(ctx);
-	const tree = SessionTree.fromEntries(entries);
-	const leafId = leafIdOf(ctx) ?? tree.fileLeafId();
-	const decs = leafId ? decisionsOnPath(tree, leafId) : [];
+function notifyDecisions(ctx: ExtensionContext): void {
+	const decs = decisionsOnPath(ctx.sessionManager.getBranch());
 	if (decs.length === 0) {
 		ctx.ui.notify("no decision records on this trunk yet — /merge → squash creates them (F7)", "info");
 		return;
@@ -97,17 +99,14 @@ function notifyDecisions(ctx: CtxLike): void {
 }
 
 /** /decisions --export [path]: write all trunk decision records to portable markdown. */
-function exportDecisions(ctx: CtxLike, args: string): void {
-	const entries = entriesOf(ctx);
-	const tree = SessionTree.fromEntries(entries);
-	const leafId = leafIdOf(ctx) ?? tree.fileLeafId();
-	const decs = leafId ? decisionsOnPath(tree, leafId) : [];
+function exportDecisions(ctx: ExtensionContext, args: string): void {
+	const decs = decisionsOnPath(ctx.sessionManager.getBranch());
 	const md = exportDecisionsMarkdown(
 		decs.map((d) => textOfContent(d.content)),
-		projectName(),
+		basename(ctx.cwd),
 	);
 	const pathArg = args.replace("--export", "").trim().split(/\s+/).filter(Boolean)[0];
-	const outPath = resolve(pathArg || "ctree-decisions.md");
+	const outPath = resolve(ctx.cwd, pathArg || "ctree-decisions.md");
 	try {
 		writeFileSync(outPath, md, "utf8");
 	} catch (err) {
@@ -118,13 +117,13 @@ function exportDecisions(ctx: CtxLike, args: string): void {
 }
 
 export async function executePanelAction(
-	pi: PiLike,
-	ctx: CtxLike,
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
 	action: PanelAction | undefined,
 	deps: Deps,
 ): Promise<void> {
 	if (!action || action.type === "close") return;
-	if (!isCmdCtx(ctx)) {
+	if (!isCommandContext(ctx)) {
 		ctx.ui.notify("this action needs a command context — run /panel (Ctrl+Q is view-only in 0.84.3)", "warning");
 		return;
 	}
@@ -135,7 +134,7 @@ export async function executePanelAction(
 			return;
 		}
 		case "branch": {
-			if (action.entryId !== leafIdOf(ctx)) {
+			if (action.entryId !== ctx.sessionManager.getLeafId()) {
 				const nav = await ctx.navigateTree(action.entryId, { summarize: false });
 				if (nav.cancelled) return;
 			}
@@ -163,7 +162,12 @@ export async function executePanelAction(
 }
 
 /** Open → act → reopen with fresh state until the user closes (mockup: the panel stays up). */
-async function runPanel(pi: PiLike, ctx: CtxLike, deps: Deps, opts: PanelOpenOptions = {}): Promise<void> {
+async function runPanel(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	deps: Deps,
+	opts: PanelOpenOptions = {},
+): Promise<void> {
 	for (let i = 0; i < 50; i++) {
 		const action = await openPanel(pi, ctx, opts);
 		if (!action || action.type === "close") return;
@@ -171,7 +175,7 @@ async function runPanel(pi: PiLike, ctx: CtxLike, deps: Deps, opts: PanelOpenOpt
 	}
 }
 
-export function registerPanel(pi: PiLike, deps: Deps): void {
+export function registerPanel(pi: ExtensionAPI, deps: Deps): void {
 	pi.registerCommand("panel", {
 		description: "pi-context-tree: full-screen context panel (tree · crop · consumers · decisions)",
 		handler: (_args, ctx) => runPanel(pi, ctx, deps),
@@ -182,7 +186,7 @@ export function registerPanel(pi: PiLike, deps: Deps): void {
 	// terminal in raw mode, so XON/XOFF flow control can't eat it).
 	pi.registerShortcut?.("ctrl+q", {
 		description: "pi-context-tree: open the context panel",
-		handler: (ctx) => runPanel(pi, ctx, deps, { readOnly: !isCmdCtx(ctx) }),
+		handler: (ctx) => runPanel(pi, ctx, deps, { readOnly: !isCommandContext(ctx) }),
 	});
 	pi.registerCommand("decisions", {
 		description: "pi-context-tree: decision records on the current trunk (F7) — --export [path] for portable markdown",

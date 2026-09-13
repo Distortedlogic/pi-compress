@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { contextTurns, planRemoveTurns, renderReconstruction } from "../../core/crop.ts";
-import { SessionBuilder, filler } from "../../core/testkit.ts";
-import { SessionTree } from "../../core/tree.ts";
+import { snapshotEntry, snapshotSession } from "../../session.ts";
+import { PiSessionFixture, filler } from "../session-fixture.ts";
 
 /**
  * u1 "audit"      → A "checking" (call rf) → rf → A "found storage"
@@ -9,7 +9,7 @@ import { SessionTree } from "../../core/tree.ts";
  * u3 "thanks"     → A "you're welcome"  (leaf)
  */
 function scenario() {
-	const b = new SessionBuilder();
+	const b = new PiSessionFixture();
 	const u1 = b.user("audit my tabs");
 	const rf = b.toolUse("read_file", { path: "src/storage.ts" }, filler(1200));
 	const a1 = b.assistant("found storage layer");
@@ -19,13 +19,13 @@ function scenario() {
 	const u3 = b.user("thanks");
 	const a3 = b.assistant("you're welcome");
 	const { entries } = b.build();
-	return { tree: SessionTree.fromEntries(entries), ids: { u1, rf, a1, u2, snap, a2, u3, a3 } };
+	return { tree: snapshotSession(b.session), ids: { u1, rf, a1, u2, snap, a2, u3, a3 } };
 }
 
 describe("contextTurns", () => {
 	it("groups each user question with its answers up to the next question", () => {
 		const { tree, ids } = scenario();
-		const turns = contextTurns(tree, ids.a3);
+		const turns = contextTurns(tree);
 
 		expect(turns.map((t) => t.userId)).toEqual([ids.u1, ids.u2, ids.u3]);
 		expect(turns[0]?.label).toBe("audit my tabs");
@@ -43,7 +43,7 @@ describe("contextTurns", () => {
 	});
 
 	it("treats injected custom_messages (decision records) as boundaries, never turn members", () => {
-		const b = new SessionBuilder();
+		const b = new PiSessionFixture();
 		const u1 = b.user("kickoff");
 		b.assistant("ok");
 		const fork = b.fork("feat");
@@ -53,8 +53,8 @@ describe("contextTurns", () => {
 		const u2 = b.user("next");
 		const a2 = b.assistant("sure");
 		const { entries } = b.build();
-		const tree = SessionTree.fromEntries(entries);
-		const turns = contextTurns(tree, a2);
+		const tree = snapshotSession(b.session);
+		const turns = contextTurns(tree);
 		// the decision record is its own context entry, not swept into either turn
 		expect(turns.map((t) => t.userId)).toEqual([u1, u2]);
 		for (const t of turns) expect(t.entryIds).not.toContain(dec);
@@ -64,9 +64,9 @@ describe("contextTurns", () => {
 describe("planRemoveTurns", () => {
 	it("anchors at the parent of the earliest removed turn and reclaims the whole turn", () => {
 		const { tree, ids } = scenario();
-		const plan = planRemoveTurns(tree, ids.a3, [ids.u2]);
+		const plan = planRemoveTurns(tree, [ids.u2]);
 
-		expect(plan.anchorId).toBe(tree.get(ids.u2)?.parentId);
+		expect(plan.anchorId).toBe(snapshotEntry(tree, ids.u2)?.parentId);
 		expect(plan.stubs).toEqual([]);
 		expect(plan.dropped).toHaveLength(1);
 		const drop = plan.dropped[0];
@@ -78,21 +78,21 @@ describe("planRemoveTurns", () => {
 		expect(drop?.sha8).toMatch(/^[0-9a-f]{8}$/);
 		expect(plan.reclaimTokens).toBeGreaterThan(9_000);
 		// deterministic
-		expect(planRemoveTurns(tree, ids.a3, [ids.u2]).dropped[0]?.sha8).toBe(drop?.sha8);
+		expect(planRemoveTurns(tree, [ids.u2]).dropped[0]?.sha8).toBe(drop?.sha8);
 	});
 
 	it("rejects ids that are not turn openers", () => {
 		const { tree, ids } = scenario();
-		expect(() => planRemoveTurns(tree, ids.a3, [ids.snap])).toThrow(/not a user question/);
-		expect(() => planRemoveTurns(tree, ids.a3, ["nope"])).toThrow(/not a user question/);
+		expect(() => planRemoveTurns(tree, [ids.snap])).toThrow(/not a user question/);
+		expect(() => planRemoveTurns(tree, ["nope"])).toThrow(/not a user question/);
 	});
 });
 
 describe("renderReconstruction with dropped turns", () => {
 	it("omits the whole turn, leaves a recoverable drop note, keeps later turns verbatim", () => {
 		const { tree, ids } = scenario();
-		const plan = planRemoveTurns(tree, ids.a3, [ids.u2]);
-		const text = renderReconstruction(tree, ids.a3, plan);
+		const plan = planRemoveTurns(tree, [ids.u2]);
+		const text = renderReconstruction(tree, plan);
 
 		// the removed turn is gone entirely — question text NOT echoed back into context
 		expect(text).not.toContain("now suspend the noisy ones");
@@ -109,8 +109,8 @@ describe("renderReconstruction with dropped turns", () => {
 
 	it("removes several turns and keeps the survivor in order", () => {
 		const { tree, ids } = scenario();
-		const plan = planRemoveTurns(tree, ids.a3, [ids.u1, ids.u3]);
-		const text = renderReconstruction(tree, ids.a3, plan);
+		const plan = planRemoveTurns(tree, [ids.u1, ids.u3]);
+		const text = renderReconstruction(tree, plan);
 		expect(text).not.toContain("found storage layer"); // u1's answer gone
 		expect(text).not.toContain("you're welcome"); // u3's answer gone
 		expect(text).toContain("now suspend the noisy ones"); // the un-removed middle turn stays live

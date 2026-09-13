@@ -4,15 +4,34 @@
  * checkpoint (F1.6); the name is mirrored into pi's native labels (F1.2).
  */
 
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CTREE_FORK } from "../core/index.ts";
-import { type CmdCtxLike, type PiLike, appendAndGetId, leafIdOf, modelKey, resolveModel } from "./adapter.ts";
 import { refreshAmbient } from "./ambient.ts";
-import { modelCompletions } from "./ctx-cache.ts";
-import { deriveState } from "./state.ts";
+import { deriveState, modelKey, resolveModel } from "./state.ts";
 
 const NAME_RE = /^[a-z0-9][a-z0-9._-]*$/i;
+let modelReferences: string[] = [];
 
-export async function branchHandler(pi: PiLike, ctx: CmdCtxLike, args: string): Promise<void> {
+export function rememberModels(ctx: ExtensionContext): void {
+	modelReferences = ctx.modelRegistry.getAll().map((model) => `${model.provider}/${model.id}`);
+}
+
+export function resetModelCompletions(): void {
+	modelReferences = [];
+}
+
+export function modelCompletions(argumentPrefix: string): { value: string; label: string }[] | null {
+	const parts = argumentPrefix.split(/\s+/);
+	if (parts.length < 2) return null;
+	const prefix = (parts.at(-1) ?? "").toLowerCase();
+	const matches = modelReferences.filter((reference) => {
+		const modelId = reference.slice(reference.indexOf("/") + 1);
+		return reference.toLowerCase().startsWith(prefix) || modelId.toLowerCase().startsWith(prefix);
+	});
+	return matches.length > 0 ? matches.map((value) => ({ value, label: value })) : null;
+}
+
+export async function branchHandler(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {
 	const [name, modelRef] = args.trim().split(/\s+/).filter(Boolean);
 	if (!name) {
 		ctx.ui.notify("usage: /branch <name> [model] — e.g. /branch fix-flaky-test haiku-4.5", "warning");
@@ -40,15 +59,16 @@ export async function branchHandler(pi: PiLike, ctx: CmdCtxLike, args: string): 
 	}
 
 	const trunkModel = modelKey(ctx.model);
-	const forkId = appendAndGetId(pi, ctx, CTREE_FORK, {
+	pi.appendEntry(CTREE_FORK, {
 		v: 1,
 		name,
-		parentEntryId: leafIdOf(ctx),
+		parentEntryId: ctx.sessionManager.getLeafId(),
 		trunkModel,
 		branchModel: modelKey(branchModel),
 		createdAt: Date.now(),
 		status: "open",
 	});
+	const forkId = ctx.sessionManager.getLeafId();
 	if (forkId) pi.setLabel(forkId, name);
 
 	if (branchModel) {
@@ -63,7 +83,10 @@ export async function branchHandler(pi: PiLike, ctx: CmdCtxLike, args: string): 
 	);
 }
 
-export function registerBranch(pi: PiLike): void {
+export function registerBranch(pi: ExtensionAPI): void {
+	const refreshModels = (_event: unknown, ctx: ExtensionContext): void => rememberModels(ctx);
+	pi.on("session_start", refreshModels);
+	pi.on("model_select", refreshModels);
 	pi.registerCommand("branch", {
 		description: "pi-context-tree: label this point and branch off (optionally onto a cheaper model)",
 		handler: (args, ctx) => branchHandler(pi, ctx, args),

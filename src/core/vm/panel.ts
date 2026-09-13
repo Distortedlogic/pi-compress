@@ -5,6 +5,8 @@
  * (and re-validate) via pi. Read-only mode (pitree, F4.6) blocks them all.
  */
 
+import type { SessionTreeNode } from "@earendil-works/pi-coding-agent";
+import type { SessionSnapshot } from "../../session.ts";
 import { aggregateConsumers } from "../consumers.ts";
 import {
 	type ContextTurn,
@@ -16,10 +18,9 @@ import {
 	planCrop,
 	planRemoveTurns,
 } from "../crop.ts";
-import { type ForkInfo, type ForkPresentation, decisionsOnPath, extractForks, nearestOpenFork } from "../ctree.ts";
+import { type ForkInfo, type ForkPresentation, decisionsOnPath, nearestOpenFork } from "../ctree.ts";
 import { type Band, band, estimateContextTokens, estimateEntryTokens, fmtTokens } from "../estimate.ts";
 import { serializeEntry, textOfContent } from "../serialize.ts";
-import { SessionTree, contextSlice } from "../tree.ts";
 import type { CtreeCropData, CtreeDecisionDetails, SessionEntry, UserContent } from "../types.ts";
 import {
 	CTREE_CLOSE,
@@ -40,8 +41,11 @@ export type PanelView = "tree" | "crop" | "consumers" | "decisions" | "inspect";
 
 export interface PanelInput {
 	entries: SessionEntry[];
-	/** defaults to the last entry in file order (pi load semantics) */
-	leafId?: string | null;
+	branch: SessionEntry[];
+	contextEntries: SessionEntry[];
+	tree: SessionTreeNode[];
+	forks: ForkInfo[];
+	leafId: string | null;
 	project: string;
 	sessionName?: string;
 	model?: string;
@@ -116,9 +120,12 @@ function firstLine(text: string): string {
 
 export class PanelVm {
 	readonly input: PanelInput;
-	readonly tree: SessionTree;
+	readonly tree: SessionTreeNode[];
 	readonly leafId: string;
 	readonly forks: ForkInfo[];
+	private readonly snapshot: SessionSnapshot;
+	private readonly branchIds: Set<string>;
+	private readonly entryById: Map<string, SessionEntry>;
 	private readonly forkById: Map<string, ForkInfo>;
 	private readonly slice: SessionEntry[];
 	private candidates: CropCandidate[] | null = null;
@@ -136,18 +143,27 @@ export class PanelVm {
 
 	constructor(input: PanelInput) {
 		this.input = input;
-		this.tree = SessionTree.fromEntries(input.entries);
-		this.leafId = input.leafId ?? this.tree.fileLeafId() ?? "";
-		this.forks = this.leafId ? extractForks(this.tree, this.leafId) : [];
-		this.forkById = new Map(this.forks.map((f) => [f.entryId, f]));
-		this.slice = this.leafId ? contextSlice(this.tree, this.leafId) : [];
+		this.tree = input.tree;
+		this.leafId = input.leafId ?? "";
+		this.forks = input.forks;
+		this.snapshot = {
+			entries: input.entries,
+			branch: input.branch,
+			contextEntries: input.contextEntries,
+			tree: input.tree,
+			leafId: input.leafId,
+		};
+		this.branchIds = new Set(input.branch.map((entry) => entry.id));
+		this.entryById = new Map(input.entries.map((entry) => [entry.id, entry]));
+		this.forkById = new Map(this.forks.map((fork) => [fork.entryId, fork]));
+		this.slice = input.contextEntries;
 		this.view = input.initialView ?? "tree";
 		for (const id of input.premark ?? []) this.marks.add(id);
 		for (const f of this.forks) if (f.status !== "open") this.folds.set(f.entryId, true);
 	}
 
 	header(): PanelHeader {
-		const open = this.leafId ? nearestOpenFork(this.tree, this.leafId, this.forks) : undefined;
+		const open = nearestOpenFork(this.snapshot.branch, this.forks);
 		// pi reports usage 0 until a fresh assistant turn lands (right after load or
 		// compaction) — for a non-empty slice that would draw a 0% gauge over a fat
 		// context, so fall back to the chars/4 estimate instead (§11.5).
@@ -195,15 +211,16 @@ export class PanelVm {
 	}
 
 	private treeRows(): PanelRow[] {
-		const currentFork = this.leafId ? nearestOpenFork(this.tree, this.leafId, this.forks) : undefined;
+		const currentFork = nearestOpenFork(this.snapshot.branch, this.forks);
 		const rows: PanelRow[] = [];
-		const visit = (e: SessionEntry, depth: number): void => {
-			const fork = this.forkById.get(e.id);
+		const visit = (node: SessionTreeNode, depth: number): void => {
+			const entry = node.entry;
+			const fork = this.forkById.get(entry.id);
 			if (fork) {
-				const folded = this.effectiveFold(e.id);
+				const folded = this.effectiveFold(entry.id);
 				rows.push({
 					kind: "fork",
-					id: e.id,
+					id: entry.id,
 					depth,
 					glyph: "⎇",
 					text: `${fork.data.name} · ${fork.status}${fork.data.branchModel ? ` · ${fork.data.branchModel}` : ""}`,
@@ -214,16 +231,16 @@ export class PanelVm {
 					onPath: fork.onCurrentPath,
 					current: fork.entryId === currentFork?.entryId,
 				});
-				for (const child of this.tree.children(e.id)) {
-					if (folded && !this.tree.isAncestorOrSelf(child.id, this.leafId)) continue;
+				for (const child of node.children) {
+					if (folded && !this.branchIds.has(child.entry.id)) continue;
 					visit(child, depth + 1);
 				}
 				return;
 			}
-			rows.push(this.entryRow(e, depth));
-			for (const child of this.tree.children(e.id)) visit(child, depth);
+			rows.push(this.entryRow(entry, depth));
+			for (const child of node.children) visit(child, depth);
 		};
-		for (const root of this.tree.roots()) visit(root, 0);
+		for (const root of this.tree) visit(root, 0);
 		return rows;
 	}
 
@@ -238,7 +255,7 @@ export class PanelVm {
 			tokens: tokens > 0 ? tokens : undefined,
 			warn: tokens >= 10_000,
 			current: e.id === this.leafId,
-			onPath: this.tree.isAncestorOrSelf(e.id, this.leafId),
+			onPath: this.branchIds.has(e.id),
 		};
 		if (isMessageEntry(e)) {
 			const m = e.message;
@@ -329,12 +346,12 @@ export class PanelVm {
 	}
 
 	private getCandidates(): CropCandidate[] {
-		if (!this.candidates) this.candidates = this.leafId ? cropCandidates(this.tree, this.leafId) : [];
+		if (!this.candidates) this.candidates = this.leafId ? cropCandidates(this.snapshot) : [];
 		return this.candidates;
 	}
 
 	private getTurns(): ContextTurn[] {
-		if (!this.turnsCache) this.turnsCache = this.leafId ? contextTurns(this.tree, this.leafId) : [];
+		if (!this.turnsCache) this.turnsCache = this.leafId ? contextTurns(this.snapshot) : [];
 		return this.turnsCache;
 	}
 
@@ -387,7 +404,7 @@ export class PanelVm {
 
 	/** mockup card: ◆ name / meta (date · model · branch · confirmed) / outcome / ✗ epitaphs */
 	private decisionRows(): PanelRow[] {
-		const decs = this.leafId ? decisionsOnPath(this.tree, this.leafId) : [];
+		const decs = decisionsOnPath(this.snapshot.branch);
 		if (decs.length === 0) {
 			return [
 				{
@@ -440,7 +457,7 @@ export class PanelVm {
 	}
 
 	private inspectRows(): PanelRow[] {
-		const e = this.inspectId ? this.tree.get(this.inspectId) : undefined;
+		const e = this.inspectId ? this.entryById.get(this.inspectId) : undefined;
 		if (!e) return [{ kind: "inspect-line", depth: 0, glyph: " ", text: "(nothing selected)", dim: true }];
 		const tokens = estimateEntryTokens(e);
 		const tool =
@@ -615,7 +632,7 @@ export class PanelVm {
 			case "enter": {
 				if (readOnly) return this.deny();
 				if (this.marks.size === 0) return { notify: "nothing marked — space to mark entries" };
-				const plan = planCrop(this.tree, this.leafId, [...this.marks]);
+				const plan = planCrop(this.snapshot, [...this.marks]);
 				return { action: { type: "crop-apply", plan, dryRun: this.input.dryRun ?? false } };
 			}
 			case "c":
@@ -642,7 +659,7 @@ export class PanelVm {
 			case "enter": {
 				if (readOnly) return this.deny();
 				if (this.turnMarks.size === 0) return { notify: "no turns marked — space to mark a whole Q&A turn" };
-				const plan = planRemoveTurns(this.tree, this.leafId, [...this.turnMarks]);
+				const plan = planRemoveTurns(this.snapshot, [...this.turnMarks]);
 				return { action: { type: "crop-apply", plan, dryRun: this.input.dryRun ?? false } };
 			}
 			case "c":

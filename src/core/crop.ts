@@ -8,10 +8,11 @@
  */
 
 import { createHash } from "node:crypto";
+import type { SessionSnapshot } from "../session.ts";
+import { snapshotEntry } from "../session.ts";
 import { estimateEntryTokens, fmtTokens } from "./estimate.ts";
-import { serializeEntry } from "./serialize.ts";
-import { type SessionTree, contextSlice } from "./tree.ts";
-import type { CtreeCropDrop, CtreeCropStub, MessageEntry, SessionEntry, UserContent } from "./types.ts";
+import { serializeEntry, textOfContent } from "./serialize.ts";
+import type { AgentMessage, CtreeCropDrop, CtreeCropStub, MessageEntry, SessionEntry } from "./types.ts";
 import { isMessageEntry } from "./types.ts";
 
 export interface CropCandidate {
@@ -56,11 +57,6 @@ export interface ContextTurn {
 
 const PRIMARY_ARG_KEYS = ["path", "file_path", "url", "command", "query", "name"];
 
-function textOf(content: UserContent): string {
-	if (typeof content === "string") return content;
-	return content.map((b) => (b.type === "text" ? b.text : "[image]")).join("\n");
-}
-
 function firstLine(s: string, max = 80): string {
 	const line = s.split("\n", 1)[0] ?? "";
 	return line.length > max ? `${line.slice(0, max)}…` : line;
@@ -77,11 +73,11 @@ function isAnswerEntry(e: SessionEntry): boolean {
 }
 
 /** Find the toolCall arguments paired with a toolResult (for primary-arg display). */
-function primaryArg(tree: SessionTree, entry: MessageEntry): string | undefined {
+function primaryArg(snapshot: SessionSnapshot, entry: MessageEntry): string | undefined {
 	const m = entry.message;
 	if (m.role === "bashExecution") return m.command.slice(0, 60);
 	if (m.role !== "toolResult") return undefined;
-	const parent = entry.parentId ? tree.get(entry.parentId) : undefined;
+	const parent = entry.parentId ? snapshotEntry(snapshot, entry.parentId) : undefined;
 	if (!parent || !isMessageEntry(parent) || parent.message.role !== "assistant") return undefined;
 	for (const block of parent.message.content) {
 		if (block.type === "toolCall" && block.id === m.toolCallId) {
@@ -104,38 +100,37 @@ function toolNameOf(e: SessionEntry): string | undefined {
 	return undefined;
 }
 
-export function cropCandidates(tree: SessionTree, leafId: string): CropCandidate[] {
-	const slice = contextSlice(tree, leafId);
+export function cropCandidates(snapshot: SessionSnapshot): CropCandidate[] {
+	const slice = snapshot.contextEntries;
 
-	// ages: assistant messages strictly after each position
 	const assistantsAfter: number[] = new Array(slice.length).fill(0);
 	let count = 0;
-	for (let i = slice.length - 1; i >= 0; i--) {
-		assistantsAfter[i] = count;
-		const e = slice[i];
-		if (e && isMessageEntry(e) && e.message.role === "assistant") count += 1;
+	for (let index = slice.length - 1; index >= 0; index--) {
+		assistantsAfter[index] = count;
+		const entry = slice[index];
+		if (entry && isMessageEntry(entry) && entry.message.role === "assistant") count += 1;
 	}
 
 	const latestPerTool = new Map<string, string>();
-	for (const e of slice) {
-		const tool = toolNameOf(e);
-		if (tool) latestPerTool.set(tool, e.id);
+	for (const entry of slice) {
+		const tool = toolNameOf(entry);
+		if (tool) latestPerTool.set(tool, entry.id);
 	}
 
-	const out: CropCandidate[] = [];
-	slice.forEach((e, i) => {
-		const tool = toolNameOf(e);
+	const candidates: CropCandidate[] = [];
+	slice.forEach((entry, index) => {
+		const tool = toolNameOf(entry);
 		if (!tool) return;
-		out.push({
-			entryId: e.id,
+		candidates.push({
+			entryId: entry.id,
 			tool,
-			arg: primaryArg(tree, e as MessageEntry),
-			estTokens: estimateEntryTokens(e),
-			ageTurns: assistantsAfter[i] ?? 0,
-			protected: latestPerTool.get(tool) === e.id,
+			arg: primaryArg(snapshot, entry as MessageEntry),
+			estTokens: estimateEntryTokens(entry),
+			ageTurns: assistantsAfter[index] ?? 0,
+			protected: latestPerTool.get(tool) === entry.id,
 		});
 	});
-	return out;
+	return candidates;
 }
 
 function globToRegex(glob: string): RegExp {
@@ -155,10 +150,12 @@ export function autoSelect(candidates: CropCandidate[], rules: AutoRules): strin
 		.map((c) => c.entryId);
 }
 
-export function planCrop(tree: SessionTree, leafId: string, markedIds: string[]): CropPlan {
-	const slice = contextSlice(tree, leafId);
-	const position = new Map(slice.map((e, i) => [e.id, i]));
-	const croppable = new Set(cropCandidates(tree, leafId).map((c) => c.entryId));
+export function planCrop(snapshot: SessionSnapshot, markedIds: string[]): CropPlan {
+	const sourceLeafId = snapshot.leafId;
+	if (!sourceLeafId) throw new Error("session has no leaf");
+	const slice = snapshot.contextEntries;
+	const position = new Map(slice.map((entry, index) => [entry.id, index]));
+	const croppable = new Set(cropCandidates(snapshot).map((candidate) => candidate.entryId));
 
 	for (const id of markedIds) {
 		if (!position.has(id)) throw new Error(`entry ${id} is not on the current path`);
@@ -170,15 +167,15 @@ export function planCrop(tree: SessionTree, leafId: string, markedIds: string[])
 	if (!earliest) throw new Error("nothing marked");
 
 	const stubs: CtreeCropStub[] = ordered.map((id) => {
-		const entry = tree.get(id) as MessageEntry;
+		const entry = snapshotEntry(snapshot, id) as MessageEntry;
 		const body =
 			entry.message.role === "bashExecution"
 				? entry.message.output
-				: textOf((entry.message as { content: UserContent }).content);
+				: textOfContent((entry.message as Extract<AgentMessage, { role: "toolResult" }>).content);
 		return {
 			entryId: id,
 			tool: toolNameOf(entry) ?? "tool",
-			arg: primaryArg(tree, entry),
+			arg: primaryArg(snapshot, entry),
 			estTokens: estimateEntryTokens(entry),
 			sha8: createHash("sha256").update(body).digest("hex").slice(0, 8),
 		};
@@ -186,34 +183,34 @@ export function planCrop(tree: SessionTree, leafId: string, markedIds: string[])
 
 	return {
 		marked: ordered,
-		anchorId: tree.get(earliest)?.parentId ?? null,
-		reclaimTokens: stubs.reduce((s, x) => s + x.estTokens, 0),
+		anchorId: snapshotEntry(snapshot, earliest)?.parentId ?? null,
+		reclaimTokens: stubs.reduce((sum, stub) => sum + stub.estTokens, 0),
 		stubs,
 		dropped: [],
-		sourceLeafId: leafId,
+		sourceLeafId,
 	};
 }
 
 /** Group the context into Q&A turns: a user question + the answers it spawned. */
-export function contextTurns(tree: SessionTree, leafId: string): ContextTurn[] {
-	const slice = contextSlice(tree, leafId);
+export function contextTurns(snapshot: SessionSnapshot): ContextTurn[] {
 	const turns: ContextTurn[] = [];
-	let cur: ContextTurn | null = null;
-	for (const e of slice) {
-		if (isUserMessage(e)) {
-			cur = {
-				userId: e.id,
-				// guarded by isUserMessage above — user messages carry UserContent
-				label: firstLine(textOf(((e as MessageEntry).message as { content: UserContent }).content)),
-				entryIds: [e.id],
-				estTokens: estimateEntryTokens(e),
+	let current: ContextTurn | null = null;
+	for (const entry of snapshot.contextEntries) {
+		if (isUserMessage(entry)) {
+			current = {
+				userId: entry.id,
+				label: firstLine(
+					textOfContent(((entry as MessageEntry).message as Extract<AgentMessage, { role: "user" }>).content),
+				),
+				entryIds: [entry.id],
+				estTokens: estimateEntryTokens(entry),
 			};
-			turns.push(cur);
-		} else if (cur && isAnswerEntry(e)) {
-			cur.entryIds.push(e.id);
-			cur.estTokens += estimateEntryTokens(e);
+			turns.push(current);
+		} else if (current && isAnswerEntry(entry)) {
+			current.entryIds.push(entry.id);
+			current.estTokens += estimateEntryTokens(entry);
 		} else {
-			cur = null; // custom_message / branch_summary / pre-first-user → turn boundary
+			current = null;
 		}
 	}
 	return turns;
@@ -225,10 +222,11 @@ export function contextTurns(tree: SessionTree, leafId: string): ContextTurn[] {
  * append-only mechanism as planCrop: branch at the anchor, reconstruction block
  * omits the turns, originals stay recoverable (G4).
  */
-export function planRemoveTurns(tree: SessionTree, leafId: string, userIds: string[]): CropPlan {
-	const slice = contextSlice(tree, leafId);
-	const position = new Map(slice.map((e, i) => [e.id, i]));
-	const byUser = new Map(contextTurns(tree, leafId).map((t) => [t.userId, t]));
+export function planRemoveTurns(snapshot: SessionSnapshot, userIds: string[]): CropPlan {
+	const sourceLeafId = snapshot.leafId;
+	if (!sourceLeafId) throw new Error("session has no leaf");
+	const position = new Map(snapshot.contextEntries.map((entry, index) => [entry.id, index]));
+	const byUser = new Map(contextTurns(snapshot).map((turn) => [turn.userId, turn]));
 
 	for (const id of userIds) {
 		if (!byUser.has(id)) throw new Error(`entry ${id} is not a user question (only whole turns can be removed)`);
@@ -237,11 +235,13 @@ export function planRemoveTurns(tree: SessionTree, leafId: string, userIds: stri
 	const earliest = ordered[0];
 	if (!earliest) throw new Error("nothing marked");
 
-	const dropped: CtreeCropDrop[] = ordered.map((uid) => {
-		const turn = byUser.get(uid) as ContextTurn;
-		const body = turn.entryIds.map((id) => serializeEntry(tree.get(id) as SessionEntry) ?? "").join("\n");
+	const dropped: CtreeCropDrop[] = ordered.map((userId) => {
+		const turn = byUser.get(userId) as ContextTurn;
+		const body = turn.entryIds
+			.map((id) => serializeEntry(snapshotEntry(snapshot, id) as SessionEntry) ?? "")
+			.join("\n");
 		return {
-			userId: uid,
+			userId,
 			entryIds: turn.entryIds,
 			label: turn.label,
 			estTokens: turn.estTokens,
@@ -251,11 +251,11 @@ export function planRemoveTurns(tree: SessionTree, leafId: string, userIds: stri
 
 	return {
 		marked: [],
-		anchorId: tree.get(earliest)?.parentId ?? null,
-		reclaimTokens: dropped.reduce((s, d) => s + d.estTokens, 0),
+		anchorId: snapshotEntry(snapshot, earliest)?.parentId ?? null,
+		reclaimTokens: dropped.reduce((sum, drop) => sum + drop.estTokens, 0),
 		stubs: [],
 		dropped,
-		sourceLeafId: leafId,
+		sourceLeafId,
 	};
 }
 
@@ -279,8 +279,8 @@ export function dropLine(d: CtreeCropDrop): string {
  * point. Everything after the anchor, in order: tool results stubbed, whole
  * removed turns collapsed to a drop note, everything else kept verbatim.
  */
-export function renderReconstruction(tree: SessionTree, leafId: string, plan: CropPlan): string {
-	const slice = contextSlice(tree, leafId);
+export function renderReconstruction(snapshot: SessionSnapshot, plan: CropPlan): string {
+	const slice = snapshot.contextEntries;
 	const stubbed = new Map(plan.stubs.map((s) => [s.entryId, s]));
 	const dropFirst = new Map(plan.dropped.map((d) => [d.entryIds[0] as string, d]));
 	const droppedIds = new Set(plan.dropped.flatMap((d) => d.entryIds));

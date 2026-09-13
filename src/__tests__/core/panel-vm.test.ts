@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { SessionBuilder, filler } from "../../core/testkit.ts";
+import { extractForks } from "../../core/ctree.ts";
 import { PanelVm } from "../../core/vm/panel.ts";
+import { snapshotSession } from "../../session.ts";
+import { PiSessionFixture, filler } from "../session-fixture.ts";
 
 /** branched session: squashed fork w/ sibling work, dangling fork, active fork */
 function build() {
-	const b = new SessionBuilder();
+	const b = new PiSessionFixture();
 	b.user("kickoff");
 	const plan = b.assistant("plan");
 	const storage = b.fork("storage-layer");
@@ -22,14 +24,22 @@ function build() {
 	b.user("tests flake");
 	const rt = b.toolUse("run_tests", {}, filler(8_000));
 	const leaf = b.assistant("root cause found");
-	const { entries } = b.build();
-	return { entries, ids: { plan, storage, dec, snap, perf, fix, rt, leaf } };
+	return { b, ids: { plan, storage, dec, snap, perf, fix, rt, leaf } };
+}
+
+function panelInput(b: PiSessionFixture, overrides: Record<string, unknown> = {}) {
+	return {
+		...snapshotSession(b.session),
+		forks: extractForks(b.session),
+		project: "tabwrangler",
+		...overrides,
+	};
 }
 
 function vm(overrides: Record<string, unknown> = {}) {
-	const { entries, ids } = build();
+	const { b, ids } = build();
 	return {
-		vm: new PanelVm({ entries, project: "tabwrangler", model: "haiku-4.5", contextWindow: 200_000, ...overrides }),
+		vm: new PanelVm(panelInput(b, { model: "haiku-4.5", contextWindow: 200_000, ...overrides })),
 		ids,
 	};
 }
@@ -227,7 +237,7 @@ describe("PanelVm section titles (mockup sectheads)", () => {
 
 describe("PanelVm decisions cards (mockup contract)", () => {
 	function cardVm() {
-		const b = new SessionBuilder();
+		const b = new PiSessionFixture();
 		b.user("kickoff");
 		const a0 = b.assistant("two options");
 		const early = b.fork("storage-layer", { trunkModel: "opus-4.8", branchModel: "haiku-4.5" });
@@ -247,20 +257,21 @@ describe("PanelVm decisions cards (mockup contract)", () => {
 		);
 		b.close(alt, "squashed", { decisionEntryId: dec2 });
 		b.user("onwards");
-		const p = new PanelVm({ entries: b.build().entries, project: "tabwrangler" });
+		const p = new PanelVm(panelInput(b));
 		p.handleKey("D");
-		return { p, dec1, dec2, alt };
+		const date = b.session.getEntry(dec2)?.timestamp.slice(0, 10);
+		return { p, dec1, dec2, alt, date };
 	}
 
 	it("renders each record as a card: header, meta, outcome, epitaphs — newest first", () => {
-		const { p, dec2, alt } = cardVm();
+		const { p, dec2, alt, date } = cardVm();
 		const rows = p.rows();
 		expect(rows[0]?.glyph).toBe("◆");
 		expect(rows[0]?.text).toBe("alt-b");
 		expect(rows[0]?.id).toBe(dec2);
 		const meta = rows[1];
 		expect(meta?.dim).toBe(true);
-		expect(meta?.text).toContain("2026-06-12");
+		expect(meta?.text).toContain(date);
 		expect(meta?.text).toContain("drafted by haiku-4.5");
 		expect(meta?.text).toContain(`branch ${alt}`);
 		expect(meta?.text).toContain("human-confirmed ✓");
@@ -285,7 +296,7 @@ describe("PanelVm decisions cards (mockup contract)", () => {
 
 describe("PanelVm crop turn-mode (remove whole Q&A turns)", () => {
 	function turnVm(overrides: Record<string, unknown> = {}) {
-		const b = new SessionBuilder();
+		const b = new PiSessionFixture();
 		const u1 = b.user("first question");
 		b.assistant("first answer");
 		const u2 = b.user("second question — the fat one");
@@ -293,7 +304,7 @@ describe("PanelVm crop turn-mode (remove whole Q&A turns)", () => {
 		b.assistant("second answer");
 		const u3 = b.user("third question");
 		const leaf = b.assistant("third answer");
-		const p = new PanelVm({ entries: b.build().entries, project: "p", contextWindow: 200_000, ...overrides });
+		const p = new PanelVm(panelInput(b, { project: "p", contextWindow: 200_000, ...overrides }));
 		p.handleKey("c"); // into crop
 		p.handleKey("t"); // toggle to turn mode
 		return { p, ids: { u1, u2, u3, leaf } };

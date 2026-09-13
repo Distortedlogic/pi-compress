@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 import {
 	COMPRESSION_REQUEST,
@@ -29,21 +29,13 @@ type Outcome = Pick<CompressionResult, "status" | "details" | "code">;
 
 /** The context is a public Pi capability. It is not part of durable protocol data. */
 export function registerBatchCompression(pi: ExtensionAPI): void {
-	const contexts = new Map<string, ExtensionContext>();
 	const prepared = new Map<string, Prepared>();
 	const pending = new Map<string, { request: CompressionRequest; promise: Promise<Outcome> }>();
 	const cancelled = new Set<string>();
 	const mutating = new Set<string>();
 
-	pi.on("session_start", (_event, ctx) => {
-		contexts.set(ctx.sessionManager.getSessionId(), ctx);
-	});
-	pi.on("session_tree", (_event, ctx) => {
-		contexts.set(ctx.sessionManager.getSessionId(), ctx);
-	});
 	pi.on("session_shutdown", (_event, ctx) => {
 		const id = ctx.sessionManager.getSessionId();
-		contexts.delete(id);
 		for (const [key, job] of prepared) {
 			if (job.request.sessionId === id) prepared.delete(key);
 		}
@@ -53,11 +45,10 @@ export function registerBatchCompression(pi: ExtensionAPI): void {
 	});
 
 	async function execute(request: CompressionRequest, ctx: ExtensionCommandContext, key: string): Promise<Outcome> {
-		const local = contexts.get(request.sessionId);
-		if (!local || ctx.sessionManager.getSessionId() !== request.sessionId) {
+		if (ctx.sessionManager.getSessionId() !== request.sessionId) {
 			return { status: "failed", code: "session_changed" };
 		}
-		const applied = compressionOnBranch(local, request.runId, request.batch.planId, request.batch.batchId);
+		const applied = compressionOnBranch(ctx, request.runId, request.batch.planId, request.batch.batchId);
 		if (applied) return { status: "applied", details: applied };
 
 		if (request.action === "cancel") {
@@ -95,7 +86,7 @@ export function registerBatchCompression(pi: ExtensionAPI): void {
 				cancelled.add(key);
 				return { status: "cancelled" };
 			}
-			if (!contexts.has(request.sessionId) || ctx.sessionManager.getSessionId() !== request.sessionId) {
+			if (ctx.sessionManager.getSessionId() !== request.sessionId) {
 				return { status: "failed", code: "session_changed" };
 			}
 			revalidateCompression(ctx, plan);
@@ -123,7 +114,6 @@ export function registerBatchCompression(pi: ExtensionAPI): void {
 		const transport = value as { request?: unknown; context?: ExtensionCommandContext } | undefined;
 		if (!transport || !Value.Check(CompressionRequestSchema, transport.request)) return;
 		const request = transport.request;
-		if (!contexts.has(request.sessionId)) return;
 		const key = `${request.sessionId}:${request.operationId}`;
 		let outcome: Outcome;
 		try {

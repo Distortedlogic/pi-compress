@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { SessionTree, cropCandidates, planCrop, planRange, planRemoveTurns } from "../../core/index.ts";
+import { cropCandidates, planCrop, planRange, planRemoveTurns } from "../../core/index.ts";
 import { applyCropPlan, cropHandler, parseCropFlags } from "../../extension/crop-cmd.ts";
 import { rangeCompressHandler, runBlockingRangeCompression } from "../../extension/range-compress.ts";
+import { snapshotSession } from "../../session.ts";
 import { type FakeWorld, entriesByType, makeFake } from "./fake-pi.ts";
 
 const nativeSelectorHarness = vi.hoisted(() => ({
@@ -9,16 +10,20 @@ const nativeSelectorHarness = vi.hoisted(() => ({
 	selections: [] as (string | undefined)[],
 }));
 
-vi.mock("@earendil-works/pi-coding-agent", () => ({
-	TreeSelectorComponent: class {
-		constructor(...args: unknown[]) {
-			nativeSelectorHarness.calls.push(args);
-			const selected = nativeSelectorHarness.selections.shift();
-			if (selected === undefined) (args[4] as () => void)();
-			else (args[3] as (entryId: string) => void)(selected);
-		}
-	},
-}));
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
+	return {
+		...actual,
+		TreeSelectorComponent: class {
+			constructor(...args: unknown[]) {
+				nativeSelectorHarness.calls.push(args);
+				const selected = nativeSelectorHarness.selections.shift();
+				if (selected === undefined) (args[4] as () => void)();
+				else (args[3] as (entryId: string) => void)(selected);
+			}
+		},
+	};
+});
 
 function seedBigSession(w: FakeWorld): { snap1: string; snap2: string } {
 	w.session.user("audit my tabs");
@@ -37,7 +42,7 @@ function seedRangeSession(w: FakeWorld) {
 	const end = w.session.assistant("selected source answer");
 	const continuation = w.session.user("continuation question");
 	const leaf = w.session.assistant("continuation answer");
-	const plan = planRange(SessionTree.fromEntries(w.session.entries), leaf, start, end);
+	const plan = planRange(snapshotSession(w.session.manager), start, end);
 	return { plan, ids: { anchor, start, end, continuation, leaf } };
 }
 
@@ -163,9 +168,9 @@ describe("applyCropPlan", () => {
 	it("branches at the anchor, writes the crop-tail block + marker, keeps originals", async () => {
 		const w = makeFake();
 		const { snap1 } = seedBigSession(w);
-		const tree = SessionTree.fromEntries(w.session.entries);
+		const tree = snapshotSession(w.session.manager);
 		const leaf = w.session.leaf!;
-		const plan = planCrop(tree, leaf, [snap1]);
+		const plan = planCrop(tree, [snap1]);
 		const entriesBefore = w.session.entries.length;
 
 		await applyCropPlan(w.pi, w.ctx, plan);
@@ -196,8 +201,8 @@ describe("applyCropPlan", () => {
 		w.session.assistant("done, 41 suspended");
 		w.session.user("thanks");
 		w.session.assistant("you're welcome");
-		const tree = SessionTree.fromEntries(w.session.entries);
-		const plan = planRemoveTurns(tree, w.session.leaf!, [u2]);
+		const tree = snapshotSession(w.session.manager);
+		const plan = planRemoveTurns(tree, [u2]);
 		const before = w.session.entries.length;
 
 		await applyCropPlan(w.pi, w.ctx, plan);
@@ -221,8 +226,8 @@ describe("applyCropPlan", () => {
 	it("re-validates the leaf and aborts if the session moved (TRD §6)", async () => {
 		const w = makeFake();
 		const { snap1 } = seedBigSession(w);
-		const tree = SessionTree.fromEntries(w.session.entries);
-		const plan = planCrop(tree, w.session.leaf!, [snap1]);
+		const tree = snapshotSession(w.session.manager);
+		const plan = planCrop(tree, [snap1]);
 
 		w.session.user("a new message arrives while the panel was open");
 		await applyCropPlan(w.pi, w.ctx, plan);
@@ -235,8 +240,8 @@ describe("applyCropPlan", () => {
 	it("protects the latest result per tool in candidates (panel enforces double-mark)", () => {
 		const w = makeFake();
 		const { snap1, snap2 } = seedBigSession(w);
-		const tree = SessionTree.fromEntries(w.session.entries);
-		const cands = cropCandidates(tree, w.session.leaf!);
+		const tree = snapshotSession(w.session.manager);
+		const cands = cropCandidates(tree);
 		expect(cands.find((c) => c.entryId === snap1)?.protected).toBe(false);
 		expect(cands.find((c) => c.entryId === snap2)?.protected).toBe(true);
 	});
@@ -313,7 +318,7 @@ describe("/compress native two-pass selector", () => {
 		const drafts = await runNativeCompress(w);
 
 		expect(nativeSelectorHarness.calls).toHaveLength(2);
-		expect(driver.getTreeCalls.count).toBe(2);
+		expect(driver.getTreeCalls.count).toBe(3);
 		expect(nativeSelectorHarness.calls[0]?.[0]).not.toBe(driver.liveTree);
 		expect(nativeSelectorHarness.calls[1]?.[0]).toEqual(nativeSelectorHarness.calls[0]?.[0]);
 		expect(nativeSelectorHarness.calls[0]?.[1]).toBe(ids.leaf);
@@ -570,7 +575,7 @@ describe("range compression behavior", () => {
 		w.session.assistant("anchor");
 		const start = w.session.user("selected through leaf");
 		const leaf = w.session.assistant("selected final answer");
-		const plan = planRange(SessionTree.fromEntries(w.session.entries), leaf, start, leaf);
+		const plan = planRange(snapshotSession(w.session.manager), start, leaf);
 
 		await runBlockingRangeCompression(w.pi, w.ctx, plan, undefined, {
 			draft: async () => "generated leaf summary",

@@ -13,9 +13,10 @@ import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { SessionTree, planRange, renderRangeTail } from "../../../core/index.ts";
-import { SessionBuilder } from "../../../core/testkit.ts";
+import { planRange, renderRangeTail } from "../../../core/index.ts";
 import { buildRangeCompactData } from "../../../extension/range-compress.ts";
+import { snapshotSession } from "../../../session.ts";
+import { PiSessionFixture } from "../../session-fixture.ts";
 import { expectGolden } from "./golden.ts";
 import { MockOpenAI } from "./mock-openai.ts";
 import { normalizeSession } from "./normalize.ts";
@@ -215,7 +216,7 @@ describe.skipIf(!PI)("rpc goldens", () => {
 				{ editor: (req) => `${req.prefill ?? ""}\n\n<!-- reviewed-by-human -->` },
 				async (pi, sandbox) => {
 					// Seed the two-open-siblings topology with the deterministic testkit and load it.
-					const b = new SessionBuilder(sandbox.cwd);
+					const b = new PiSessionFixture(sandbox.cwd);
 					b.modelChange("mock", "trunk-1");
 					b.user("we need an approach");
 					const a0 = b.assistant("two options exist", { provider: "mock", model: "trunk-1" });
@@ -288,7 +289,7 @@ describe.skipIf(!PI)("rpc goldens", () => {
 			let selectedIds: string[] = [];
 
 			const { raw } = await withScenario(mock, {}, async (pi, sandbox) => {
-				const b = new SessionBuilder(sandbox.cwd);
+				const b = new PiSessionFixture(sandbox.cwd);
 				b.modelChange("mock", "trunk-1");
 				b.user("before range question");
 				b.assistant("before range answer", { provider: "mock", model: "trunk-1" });
@@ -304,7 +305,7 @@ describe.skipIf(!PI)("rpc goldens", () => {
 				});
 				const original = b.build();
 				originalText = original.text;
-				const plan = planRange(SessionTree.fromEntries(original.entries), sourceLeafId, start, end);
+				const plan = planRange(snapshotSession(b.session), start, end);
 				selectedIds = [...plan.selectedEntryIds];
 				const summary = "Approved summary: cache invalidation failed because a stale key survived.";
 				const details = buildRangeCompactData(plan, summary, "mock/trunk-1");

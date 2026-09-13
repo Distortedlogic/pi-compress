@@ -1,5 +1,5 @@
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { CtxLike } from "../../extension/adapter.ts";
 import { refreshAmbient, registerAmbient, resetAmbient } from "../../extension/ambient.ts";
 import { makeFake } from "./fake-pi.ts";
 
@@ -114,9 +114,9 @@ describe("refreshAmbient", () => {
 
 	it("includes /compress in the built-in /compact warning", () => {
 		const w = makeFake();
-		const handlers = new Map<string, (event: unknown, ctx: CtxLike) => unknown>();
+		const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => unknown>();
 		w.pi.on = (event, handler) => {
-			handlers.set(event, handler as (event: unknown, ctx: CtxLike) => unknown);
+			handlers.set(event, handler as (event: unknown, ctx: ExtensionContext) => unknown);
 		};
 		registerAmbient(w.pi);
 

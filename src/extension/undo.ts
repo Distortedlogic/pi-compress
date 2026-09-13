@@ -8,6 +8,7 @@
  * (the most recent one still on the current path) — repeat /undo to peel further.
  */
 
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 import {
 	CTREE_CLOSE,
@@ -20,7 +21,6 @@ import {
 	ctreeRangeCompactData,
 } from "../core/index.ts";
 import { COMPRESSION_ENTRY, CompressionDetailsSchema } from "../protocol.ts";
-import type { CmdCtxLike, PiLike } from "./adapter.ts";
 import { refreshAmbient } from "./ambient.ts";
 import { type SessionState, deriveState } from "./state.ts";
 
@@ -31,11 +31,12 @@ interface UndoStep {
 
 /** The most recent ctree mutation whose effect is still on the active path. */
 function lastUndo(state: SessionState): UndoStep | undefined {
-	const { tree, leafId, entries, forks } = state;
+	const { leafId, entries, branch, forks } = state;
 	if (!leafId) return undefined;
+	const branchIds = new Set(branch.map((entry) => entry.id));
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const e = entries[i];
-		if (!e || !tree.isAncestorOrSelf(e.id, leafId)) continue;
+		if (!e || !branchIds.has(e.id)) continue;
 		const customType = (e as { customType?: string }).customType;
 
 		if (customType === COMPRESSION_ENTRY || customType === "pi-workstream/compression") {
@@ -77,7 +78,7 @@ function lastUndo(state: SessionState): UndoStep | undefined {
 	return undefined;
 }
 
-export async function undoHandler(pi: PiLike, ctx: CmdCtxLike): Promise<void> {
+export async function undoHandler(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
 	await ctx.waitForIdle();
 	const state = deriveState(ctx);
 	const step = lastUndo(state);
@@ -99,7 +100,7 @@ export async function undoHandler(pi: PiLike, ctx: CmdCtxLike): Promise<void> {
 	ctx.ui.notify(`↩ undone — ${step.describe}`, "info");
 }
 
-export function registerUndo(pi: PiLike): void {
+export function registerUndo(pi: ExtensionAPI): void {
 	pi.registerCommand("undo", {
 		description: "pi-context-tree: revert the last mutation (re-open a branch / restore a crop) — append-only",
 		handler: (_args, ctx) => undoHandler(pi, ctx),

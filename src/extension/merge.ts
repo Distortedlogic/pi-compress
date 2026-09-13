@@ -6,6 +6,7 @@
  * restore (TRD §5).
  */
 
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
 	CTREE_CLOSE,
 	CTREE_DECISION,
@@ -14,18 +15,9 @@ import {
 	serializeEntries,
 	siblingForks,
 } from "../core/index.ts";
-import {
-	type CmdCtxLike,
-	type Deps,
-	type PiLike,
-	appendAndGetId,
-	lastEntryId,
-	modelKey,
-	resolveModel,
-} from "./adapter.ts";
 import { refreshAmbient } from "./ambient.ts";
-import { DRAFT_SYSTEM_PROMPT, draftUserPrompt } from "./draft.ts";
-import { type SessionState, branchEntries, deriveState } from "./state.ts";
+import { DRAFT_SYSTEM_PROMPT, type Deps, draftUserPrompt } from "./draft.ts";
+import { branchEntries, deriveState, modelKey, resolveModel } from "./state.ts";
 
 type MergeMode = "squash" | "no-llm" | "discard" | "tournament";
 
@@ -45,7 +37,11 @@ function parseArgs(args: string): { mode?: MergeMode; pick: boolean; note: strin
 	return { mode, pick, note: rest.join(" ") };
 }
 
-async function pickMode(ctx: CmdCtxLike, fork: ForkInfo, siblings: ForkInfo[]): Promise<MergeMode | undefined> {
+async function pickMode(
+	ctx: ExtensionCommandContext,
+	fork: ForkInfo,
+	siblings: ForkInfo[],
+): Promise<MergeMode | undefined> {
 	const options = [
 		"squash — draft a decision record with the branch model, you confirm/edit",
 		"squash --no-llm — write the decision record yourself",
@@ -74,28 +70,38 @@ function recordTemplate(fork: ForkInfo, model: string | undefined): string {
 	});
 }
 
-async function epitaphFor(deps: Deps, ctx: CmdCtxLike, state: SessionState, sib: ForkInfo): Promise<string> {
-	const serialized = serializeEntries(siblingTail(state, sib), { perEntryCap: 800 }).slice(0, 8000);
+async function epitaphFor(deps: Deps, ctx: ExtensionCommandContext, sibling: ForkInfo): Promise<string> {
+	const serialized = serializeEntries(siblingTail(ctx, sibling), { perEntryCap: 800 }).slice(0, 8000);
 	try {
 		const text = await deps.draft(
 			ctx,
-			sib.data.branchModel,
+			sibling.data.branchModel,
 			"You write one-line epitaphs for rejected engineering approaches. Output ONE line, ≤120 chars, format: <reason it was rejected>.",
-			`Branch "${sib.data.name}" lost a tournament. Its transcript:\n---\n${serialized}\n---\nWhy was it rejected? One line.`,
+			`Branch "${sibling.data.name}" lost a tournament. Its transcript:\n---\n${serialized}\n---\nWhy was it rejected? One line.`,
 		);
 		return text.split("\n", 1)[0]?.slice(0, 160) ?? "rejected";
 	} catch {
-		const manual = await ctx.ui.input(`epitaph for rejected '${sib.data.name}' (one line)`, "why it lost");
+		const manual = await ctx.ui.input(`epitaph for rejected '${sibling.data.name}' (one line)`, "why it lost");
 		return manual?.trim() || "rejected in tournament";
 	}
 }
 
-function siblingTail(state: SessionState, sib: ForkInfo) {
-	// entries under the sibling fork (its branch content)
-	return state.entries.filter((e) => state.tree.isAncestorOrSelf(sib.entryId, e.id) && e.id !== sib.entryId);
+function siblingTail(ctx: ExtensionCommandContext, sibling: ForkInfo) {
+	return ctx.sessionManager
+		.getEntries()
+		.filter(
+			(entry) =>
+				entry.id !== sibling.entryId &&
+				ctx.sessionManager.getBranch(entry.id).some((parent) => parent.id === sibling.entryId),
+		);
 }
 
-export async function mergeHandler(pi: PiLike, ctx: CmdCtxLike, args: string, deps: Deps): Promise<void> {
+export async function mergeHandler(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	args: string,
+	deps: Deps,
+): Promise<void> {
 	await ctx.waitForIdle();
 	const state = deriveState(ctx);
 	const fork = state.currentFork;
@@ -166,7 +172,9 @@ export async function mergeHandler(pi: PiLike, ctx: CmdCtxLike, args: string, de
 
 	const rejected: { name: string; reason: string }[] = [];
 	if (mode === "tournament") {
-		for (const sib of siblings) rejected.push({ name: sib.data.name, reason: await epitaphFor(deps, ctx, state, sib) });
+		for (const sibling of siblings) {
+			rejected.push({ name: sibling.data.name, reason: await epitaphFor(deps, ctx, sibling) });
+		}
 		const lines = [draft.trimEnd()];
 		if (!draft.includes("### Rejected alternatives")) lines.push("### Rejected alternatives");
 		for (const r of rejected) lines.push(`- **${r.name}:** ${r.reason}`);
@@ -201,7 +209,7 @@ export async function mergeHandler(pi: PiLike, ctx: CmdCtxLike, args: string, de
 		},
 		{ triggerTurn: false },
 	);
-	const decisionEntryId = lastEntryId(ctx) ?? undefined;
+	const decisionEntryId = ctx.sessionManager.getLeafId() ?? undefined;
 	pi.appendEntry(CTREE_CLOSE, {
 		v: 1,
 		forkEntryId: fork.entryId,
@@ -223,7 +231,7 @@ export async function mergeHandler(pi: PiLike, ctx: CmdCtxLike, args: string, de
 	);
 }
 
-async function restoreTrunkModel(pi: PiLike, ctx: CmdCtxLike, fork: ForkInfo): Promise<void> {
+async function restoreTrunkModel(pi: ExtensionAPI, ctx: ExtensionCommandContext, fork: ForkInfo): Promise<void> {
 	const trunkRef = fork.data.trunkModel;
 	if (!trunkRef || trunkRef === modelKey(ctx.model)) return;
 	const model = resolveModel(ctx, trunkRef);
@@ -235,7 +243,7 @@ async function restoreTrunkModel(pi: PiLike, ctx: CmdCtxLike, fork: ForkInfo): P
 	if (!ok) ctx.ui.notify(`no API key for ${trunkRef} — staying on ${modelKey(ctx.model)}`, "warning");
 }
 
-export function registerMerge(pi: PiLike, deps: Deps): void {
+export function registerMerge(pi: ExtensionAPI, deps: Deps): void {
 	pi.registerCommand("merge", {
 		description: "pi-context-tree: close the open branch — squash (default) | --pick | --discard | --tournament",
 		handler: (args, ctx) => mergeHandler(pi, ctx, args, deps),

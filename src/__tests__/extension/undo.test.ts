@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Deps } from "../../extension/adapter.ts";
 import { branchHandler } from "../../extension/branch.ts";
+import type { Deps } from "../../extension/draft.ts";
 import { mergeHandler } from "../../extension/merge.ts";
 import { undoHandler } from "../../extension/undo.ts";
 import { type FakeWorld, makeFake } from "./fake-pi.ts";

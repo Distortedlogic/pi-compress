@@ -3,12 +3,12 @@
  * prompt (with pi-parity per-entry truncation) and by crop reconstruction.
  */
 
+import { contentText } from "@earendil-works/pi-ai";
 import type { SessionEntry, UserContent } from "./types.ts";
 import { isMessageEntry } from "./types.ts";
 
 export function textOfContent(content: UserContent): string {
-	if (typeof content === "string") return content;
-	return content.map((b) => (b.type === "text" ? b.text : "[image]")).join("\n");
+	return contentText(content, "\n");
 }
 
 /** Role-prefixed single-entry rendering; undefined for entries with no text. */

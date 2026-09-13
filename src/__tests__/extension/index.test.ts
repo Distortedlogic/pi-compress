@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type ExtensionAPI, type ExtensionCommandContext, createEventBus } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
-import { SessionTree, planRange } from "../../core/index.ts";
+import { planRange } from "../../core/index.ts";
 import { registerBatchCompression } from "../../extension/batch-service.ts";
 import { applyRangeCompressionPlan } from "../../extension/range-compress.ts";
 import { undoHandler } from "../../extension/undo.ts";
@@ -14,6 +14,7 @@ import {
 	type CompressionResult,
 	CompressionResultSchema,
 } from "../../protocol.ts";
+import { snapshotSession } from "../../session.ts";
 import { makeFake } from "./fake-pi.ts";
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI stripping is the point
@@ -64,10 +65,6 @@ function batchWorld() {
 		events: createEventBus(),
 		on: (name: string, handler: (event: unknown, ctx: ExtensionCommandContext) => void) => hooks.set(name, handler),
 	}) as unknown as ExtensionAPI;
-	Object.assign(world.ctx.sessionManager, {
-		getSessionId: () => "batch-session",
-		getBranch: () => SessionTree.fromEntries(world.session.entries).pathFromRoot(world.session.leaf ?? ""),
-	});
 	const ctx = Object.assign(world.ctx, {
 		cwd: "/tmp",
 		hasUI: true,
@@ -81,7 +78,7 @@ function batchWorld() {
 	const lastSettledEntryId = world.session.assistant("Current work finished.");
 	const base = {
 		v: 1 as const,
-		sessionId: "batch-session",
+		sessionId: ctx.sessionManager.getSessionId(),
 		operationId: randomUUID(),
 		runId: "run",
 		batch: {
@@ -95,7 +92,6 @@ function batchWorld() {
 		lastSettledEntryId,
 	};
 	registerBatchCompression(api);
-	hooks.get("session_start")?.({}, ctx);
 
 	function request(
 		action: CompressionRequest["action"],
@@ -168,7 +164,7 @@ describe("independent compression interface", () => {
 		const world = makeFake();
 		world.session.user("Keep the source context.");
 		const entryId = world.session.assistant("Compress this execution.");
-		const plan = planRange(SessionTree.fromEntries(world.session.entries), entryId, entryId, entryId);
+		const plan = planRange(snapshotSession(world.session.manager), entryId, entryId);
 		world.ui.editorQueue.push("Do not open the editor.");
 		const applied = await applyRangeCompressionPlan(world.pi, world.ctx, plan, "test/model", undefined, {
 			draft: async () => "Generated summary.",

@@ -1,4 +1,8 @@
-import { TreeSelectorComponent } from "@earendil-works/pi-coding-agent";
+import {
+	type ExtensionAPI,
+	type ExtensionCommandContext,
+	TreeSelectorComponent,
+} from "@earendil-works/pi-coding-agent";
 import { Loader } from "@earendil-works/pi-tui";
 import {
 	CTREE_RANGE_COMPACT,
@@ -13,15 +17,14 @@ import {
 	resolveRangeEndpoint,
 	serializeEntry,
 } from "../core/index.ts";
-import { type CmdCtxLike, type Deps, type PiLike, leafIdOf, modelKey } from "./adapter.ts";
 import { refreshAmbient } from "./ambient.ts";
-import { draftRangeSummary } from "./draft.ts";
-import { deriveState } from "./state.ts";
+import { type Deps, draftRangeSummary } from "./draft.ts";
+import { deriveState, modelKey } from "./state.ts";
 
 type RangePhase = "start" | "end";
 type RangeCompressionStage = "Drafting summary" | "Checking selected range" | "Applying compression";
 type RangeCompressionProgress = (stage: RangeCompressionStage) => void;
-type NativeTree = ReturnType<CmdCtxLike["sessionManager"]["getTree"]>;
+type NativeTree = ReturnType<ExtensionCommandContext["sessionManager"]["getTree"]>;
 type NativeTreeNode = NativeTree[number];
 
 function pruneNativeTree(tree: NativeTree, allowedEntryIds: ReadonlySet<string>): NativeTree {
@@ -33,7 +36,7 @@ function pruneNativeTree(tree: NativeTree, allowedEntryIds: ReadonlySet<string>)
 }
 
 export async function selectNativeEntry(
-	ctx: CmdCtxLike,
+	ctx: ExtensionCommandContext,
 	phase: RangePhase,
 	initialSelectedId: string,
 	allowedEntryIds: ReadonlySet<string>,
@@ -89,8 +92,8 @@ export function buildRangeCompactData(
 
 /** Apply a generated range summary. The session is revalidated before every write. */
 export async function applyRangeCompressionPlan(
-	pi: PiLike,
-	ctx: CmdCtxLike,
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
 	initialPlan: RangePlan,
 	summaryModel: string,
 	instructions: string | undefined,
@@ -118,7 +121,7 @@ export async function applyRangeCompressionPlan(
 
 	let plan: RangePlan;
 	try {
-		plan = planRange(freshState.tree, initialPlan.sourceLeafId, initialPlan.startEntryId, initialPlan.endEntryId);
+		plan = planRange(freshState, initialPlan.startEntryId, initialPlan.endEntryId);
 	} catch (error) {
 		ctx.ui.notify(`selected range is no longer valid: ${(error as Error).message} (nothing written)`, "warning");
 		return false;
@@ -135,7 +138,7 @@ export async function applyRangeCompressionPlan(
 	const rebuilt = renderRangeTail(plan, generatedSummary);
 
 	progress?.("Applying compression");
-	if (leafIdOf(ctx) !== plan.sourceLeafId) {
+	if (ctx.sessionManager.getLeafId() !== plan.sourceLeafId) {
 		ctx.ui.notify("session changed before range compression was applied — nothing written", "warning");
 		return false;
 	}
@@ -165,13 +168,13 @@ export async function applyRangeCompressionPlan(
 
 /** Keep compression blocking until the complete operation reports success or failure. */
 export async function runBlockingRangeCompression(
-	pi: PiLike,
-	ctx: CmdCtxLike,
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
 	plan: RangePlan,
 	instructions: string | undefined,
 	deps: Deps,
 ): Promise<boolean> {
-	if (leafIdOf(ctx) !== plan.sourceLeafId) {
+	if (ctx.sessionManager.getLeafId() !== plan.sourceLeafId) {
 		ctx.ui.notify("session changed while the range selector was open — re-run /compress (nothing written)", "warning");
 		return false;
 	}
@@ -225,17 +228,22 @@ export async function runBlockingRangeCompression(
 	return result ?? false;
 }
 
-export async function rangeCompressHandler(pi: PiLike, ctx: CmdCtxLike, args: string, deps: Deps): Promise<void> {
+export async function rangeCompressHandler(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	args: string,
+	deps: Deps,
+): Promise<void> {
 	const instructions = args.trim() || undefined;
 	await ctx.waitForIdle();
 	const sourceLeafId = ctx.sessionManager.getLeafId();
 	const state = deriveState(ctx);
-	if (!sourceLeafId || !state.tree.get(sourceLeafId)) {
+	if (!sourceLeafId || !ctx.sessionManager.getEntry(sourceLeafId)) {
 		ctx.ui.notify("empty session — nothing to compress", "warning");
 		return;
 	}
 
-	const candidates = rangeCandidates(state.tree, sourceLeafId);
+	const candidates = rangeCandidates(state);
 	const allowedEntryIds = new Set(candidates.flatMap((candidate) => candidate.entryIds));
 	const lastCandidate = candidates.at(-1);
 	if (!lastCandidate) {
@@ -269,15 +277,15 @@ export async function rangeCompressHandler(pi: PiLike, ctx: CmdCtxLike, args: st
 
 		let plan: RangePlan;
 		try {
-			plan = planRange(state.tree, sourceLeafId, firstEntryId, endpoint.entryId);
+			plan = planRange(state, firstEntryId, endpoint.entryId);
 		} catch (error) {
 			ctx.ui.notify(`Invalid range: ${(error as Error).message}. Select another last entry.`, "warning");
 			secondInitialId = selectedEntryId;
 			continue;
 		}
 
-		const startEntry = state.tree.get(plan.startEntryId);
-		const endEntry = state.tree.get(plan.endEntryId);
+		const startEntry = ctx.sessionManager.getEntry(plan.startEntryId);
+		const endEntry = ctx.sessionManager.getEntry(plan.endEntryId);
 		const startLabel = startEntry
 			? (serializeEntry(startEntry)?.split("\n", 1)[0] ?? startEntry.type)
 			: plan.startEntryId;
@@ -299,7 +307,7 @@ export async function rangeCompressHandler(pi: PiLike, ctx: CmdCtxLike, args: st
 	}
 }
 
-export function registerRangeCompress(pi: PiLike, deps: Deps): void {
+export function registerRangeCompress(pi: ExtensionAPI, deps: Deps): void {
 	pi.registerCommand("compress", {
 		description: "pi-context-tree: select, summarize, and replace one active-context range",
 		handler: (args, ctx) => rangeCompressHandler(pi, ctx, args, deps),

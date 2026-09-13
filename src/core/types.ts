@@ -1,229 +1,55 @@
+import type {
+	AssistantMessage,
+	ImageContent,
+	TextContent,
+	ToolCall,
+	ToolResultMessage,
+	Usage,
+	UserMessage,
+} from "@earendil-works/pi-ai";
+import type {
+	BranchSummaryEntry,
+	CompactionEntry,
+	CustomEntry,
+	CustomMessageEntry,
+	ModelChangeEntry,
+	SessionEntry,
+	SessionEntryBase,
+	SessionHeader,
+	SessionInfoEntry,
+	SessionMessageEntry,
+	ThinkingLevelChangeEntry,
+} from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 
-/**
- * Pi session-format types (verified against earendil-works/pi-mono@0.84.3
- * docs/session-format.md and src/core/session-manager.ts) plus ctree's own
- * custom-entry payloads. Parsing is permissive: unknown entry/message shapes
- * are preserved, never dropped silently.
- */
+export type {
+	AssistantMessage,
+	BranchSummaryEntry,
+	CompactionEntry,
+	CustomEntry,
+	CustomMessageEntry,
+	ImageContent,
+	ModelChangeEntry,
+	SessionEntry,
+	SessionEntryBase,
+	SessionHeader,
+	SessionInfoEntry,
+	TextContent,
+	ThinkingLevelChangeEntry,
+	ToolCall,
+	ToolResultMessage,
+	Usage,
+	UserMessage,
+};
 
-// ---------------------------------------------------------------------------
-// Content blocks
-// ---------------------------------------------------------------------------
-
-export interface TextContent {
-	type: "text";
-	text: string;
-}
-
-export interface ImageContent {
-	type: "image";
-	data: string;
-	mimeType: string;
-}
-
-export interface ThinkingContent {
-	type: "thinking";
-	thinking: string;
-}
-
-export interface ToolCall {
-	type: "toolCall";
-	id: string;
-	name: string;
-	arguments: Record<string, unknown>;
-}
-
-export type UserContent = string | (TextContent | ImageContent)[];
-
-// ---------------------------------------------------------------------------
-// Agent messages (subset of fields we consume; extra fields pass through)
-// ---------------------------------------------------------------------------
-
-export interface Usage {
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-	totalTokens: number;
-}
-
-export interface UserMessage {
-	role: "user";
-	content: UserContent;
-	timestamp?: number;
-}
-
-export interface AssistantMessage {
-	role: "assistant";
-	content: (TextContent | ThinkingContent | ToolCall)[];
-	provider?: string;
-	model?: string;
-	usage?: Usage;
-	stopReason?: string;
-	timestamp?: number;
-}
-
-export interface ToolResultMessage {
-	role: "toolResult";
-	toolCallId: string;
-	toolName: string;
-	content: (TextContent | ImageContent)[];
-	details?: unknown;
-	isError?: boolean;
-	timestamp?: number;
-}
-
-export interface BashExecutionMessage {
-	role: "bashExecution";
-	command: string;
-	output: string;
-	exitCode?: number | null;
-	cancelled?: boolean;
-	truncated?: boolean;
-	excludeFromContext?: boolean;
-	timestamp?: number;
-}
-
-export interface CustomRoleMessage {
-	role: "custom";
-	customType: string;
-	content: UserContent;
-	display: boolean;
-	details?: unknown;
-	timestamp?: number;
-}
-
-export interface BranchSummaryMessage {
-	role: "branchSummary";
-	summary: string;
-	fromId: string;
-	timestamp?: number;
-}
-
-export interface CompactionSummaryMessage {
-	role: "compactionSummary";
-	summary: string;
-	tokensBefore: number;
-	timestamp?: number;
-}
-
-export type AgentMessage =
-	| UserMessage
-	| AssistantMessage
-	| ToolResultMessage
-	| BashExecutionMessage
-	| CustomRoleMessage
-	| BranchSummaryMessage
-	| CompactionSummaryMessage;
-
-// ---------------------------------------------------------------------------
-// Session entries
-// ---------------------------------------------------------------------------
-
-export interface SessionHeader {
-	type: "session";
-	version: number;
-	id: string;
-	timestamp: string;
-	cwd: string;
-	parentSession?: string;
-}
-
-export interface SessionEntryBase {
-	id: string;
-	parentId: string | null;
-	timestamp: string;
-}
-
-export interface MessageEntry extends SessionEntryBase {
-	type: "message";
-	message: AgentMessage;
-}
-
-export interface ModelChangeEntry extends SessionEntryBase {
-	type: "model_change";
-	provider: string;
-	modelId: string;
-}
-
-export interface ThinkingLevelChangeEntry extends SessionEntryBase {
-	type: "thinking_level_change";
-	thinkingLevel: string;
-}
-
-export interface CompactionEntry extends SessionEntryBase {
-	type: "compaction";
-	summary: string;
-	firstKeptEntryId: string;
-	tokensBefore: number;
-	details?: unknown;
-	fromHook?: boolean;
-}
-
-export interface BranchSummaryEntry extends SessionEntryBase {
-	type: "branch_summary";
-	fromId: string;
-	summary: string;
-	details?: unknown;
-	fromHook?: boolean;
-}
-
-export interface CustomEntry extends SessionEntryBase {
-	type: "custom";
-	customType: string;
-	data?: unknown;
-}
-
-export interface CustomMessageEntry extends SessionEntryBase {
-	type: "custom_message";
-	customType: string;
-	content: UserContent;
-	display: boolean;
-	details?: unknown;
-}
-
-export interface LabelEntry extends SessionEntryBase {
-	type: "label";
-	targetId: string;
-	label?: string;
-}
-
-export interface SessionInfoEntry extends SessionEntryBase {
-	type: "session_info";
-	name?: string;
-}
-
-/** Entry types this version does not understand are preserved, not dropped. */
-export interface UnknownEntry extends SessionEntryBase {
-	type: string;
-	[key: string]: unknown;
-}
-
-export type SessionEntry =
-	| MessageEntry
-	| ModelChangeEntry
-	| ThinkingLevelChangeEntry
-	| CompactionEntry
-	| BranchSummaryEntry
-	| CustomEntry
-	| CustomMessageEntry
-	| LabelEntry
-	| SessionInfoEntry
-	| UnknownEntry;
-
-export const KNOWN_ENTRY_TYPES = new Set([
-	"message",
-	"model_change",
-	"thinking_level_change",
-	"compaction",
-	"branch_summary",
-	"custom",
-	"custom_message",
-	"label",
-	"session_info",
-]);
+export type MessageEntry = SessionMessageEntry;
+export type AgentMessage = SessionMessageEntry["message"];
+export type UserContent = UserMessage["content"];
+export type BashExecutionMessage = Extract<AgentMessage, { role: "bashExecution" }>;
+export type CustomRoleMessage = Extract<AgentMessage, { role: "custom" }>;
+export type BranchSummaryMessage = Extract<AgentMessage, { role: "branchSummary" }>;
+export type CompactionSummaryMessage = Extract<AgentMessage, { role: "compactionSummary" }>;
 
 // ---------------------------------------------------------------------------
 // ctree custom-entry payloads (schema-versioned, append-only)

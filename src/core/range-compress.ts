@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
+import type { SessionSnapshot } from "../session.ts";
+import { snapshotEntry } from "../session.ts";
 import { estimateEntryTokens, fmtTokens } from "./estimate.ts";
 import { serializeEntries } from "./serialize.ts";
-import { type SessionTree, contextSlice } from "./tree.ts";
 import type { SessionEntry } from "./types.ts";
 import { CTREE_DECISION, isCustomMessageEntry, isMessageEntry } from "./types.ts";
 
@@ -13,7 +14,7 @@ export interface RangeCandidate {
 	endEntryId: string;
 	/** Entries that must be selected together, in source order. */
 	entryIds: string[];
-	/** Zero-based positions in contextSlice. */
+	/** Zero-based positions in Pi's active context entries. */
 	pathIndex: number;
 	endPathIndex: number;
 	estTokens: number;
@@ -91,9 +92,12 @@ export function resolveRangeEndpoint(
 }
 
 /** Build safe groups only from the context that the active leaf sends to the model. */
-export function rangeCandidates(tree: SessionTree, sourceLeafId: string): RangeCandidate[] {
-	if (!tree.get(sourceLeafId)) throw new Error(`source leaf ${sourceLeafId} was not found`);
-	const slice = contextSlice(tree, sourceLeafId);
+export function rangeCandidates(snapshot: SessionSnapshot): RangeCandidate[] {
+	const sourceLeafId = snapshot.leafId;
+	if (!sourceLeafId || !snapshotEntry(snapshot, sourceLeafId)) {
+		throw new Error(`source leaf ${sourceLeafId ?? ""} was not found`);
+	}
+	const slice = snapshot.contextEntries;
 
 	let incompleteUserId: string | undefined;
 	for (let i = slice.length - 1; i >= 0; i--) {
@@ -163,20 +167,23 @@ export function rangeCandidates(tree: SessionTree, sourceLeafId: string): RangeC
 	return candidates;
 }
 
-function endpointPosition(tree: SessionTree, slice: readonly SessionEntry[], id: string): number {
-	if (!tree.get(id)) throw new Error(`entry ${id} was not found`);
-	const position = slice.findIndex((entry) => entry.id === id);
+function endpointPosition(snapshot: SessionSnapshot, id: string): number {
+	if (!snapshotEntry(snapshot, id)) throw new Error(`entry ${id} was not found`);
+	const position = snapshot.contextEntries.findIndex((entry) => entry.id === id);
 	if (position === -1) throw new Error(`entry ${id} is not on the active context path`);
 	return position;
 }
 
-/** Plan one normalized, continuous range without changing the tree. */
-export function planRange(tree: SessionTree, sourceLeafId: string, startId: string, endId: string): RangePlan {
-	if (!tree.get(sourceLeafId)) throw new Error(`source leaf ${sourceLeafId} was not found`);
-	const slice = contextSlice(tree, sourceLeafId);
-	const candidates = rangeCandidates(tree, sourceLeafId);
-	const startPosition = endpointPosition(tree, slice, startId);
-	const endPosition = endpointPosition(tree, slice, endId);
+/** Plan one normalized, continuous range without changing the session. */
+export function planRange(snapshot: SessionSnapshot, startId: string, endId: string): RangePlan {
+	const sourceLeafId = snapshot.leafId;
+	if (!sourceLeafId || !snapshotEntry(snapshot, sourceLeafId)) {
+		throw new Error(`source leaf ${sourceLeafId ?? ""} was not found`);
+	}
+	const slice = snapshot.contextEntries;
+	const candidates = rangeCandidates(snapshot);
+	const startPosition = endpointPosition(snapshot, startId);
+	const endPosition = endpointPosition(snapshot, endId);
 	if (startPosition > endPosition) throw new Error("range endpoints are not normalized");
 	const byEntryId = candidateByEntryId(candidates);
 	const firstGroup = byEntryId.get(startId);
