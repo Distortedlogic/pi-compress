@@ -13,7 +13,7 @@ import { registerBranch, registerMerge, registerUndo } from "./branches.ts";
 import { registerCrop } from "./compression.ts";
 import { type Deps, realDraft } from "./extension/draft.ts";
 import { registerAmbient, registerDecisionRenderer, registerPanel } from "./panel.ts";
-import { registerRangeCompress } from "./range-compression.ts";
+import { registerRangeCompress, registerRangeCompressionService } from "./range-compression.ts";
 
 export default function piContextCompress(api: ExtensionAPI): void {
 	const deps: Deps = { draft: realDraft };
@@ -22,6 +22,7 @@ export default function piContextCompress(api: ExtensionAPI): void {
 	registerMerge(api, deps);
 	registerCrop(api);
 	registerRangeCompress(api);
+	registerRangeCompressionService(api);
 	registerPanel(api, deps);
 	registerUndo(api);
 	registerAmbient(api);

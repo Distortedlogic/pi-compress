@@ -117,25 +117,25 @@
 
 ## Work unit 7 — Add the generic inter-extension protocol
 
-- [ ] Add `RANGE_COMPRESSION_REQUEST = 'pi-context-compress/v1/range/request'` to `src/protocol.ts`.
-- [ ] Add `RANGE_COMPRESSION_RESULT = 'pi-context-compress/v1/range/result'` to `src/protocol.ts`.
-- [ ] Add an exact TypeBox `RangeCompressionRequestSchema` as a discriminated union.
-- [ ] Define `prepare` requests with required `requestId`, `sessionId`, `operationId`, `startEntryId`, `endEntryId`, and `review`; allow only optional `anchorEntryId` and `instructions` in addition.
-- [ ] Define exact `apply`, `cancel`, and `status` requests with required `requestId`, `sessionId`, and `operationId`.
-- [ ] Add an exact `RangeCompressionResultSchema` with statuses `prepared`, `applied`, `cancelled`, `missing`, and `failed`.
-- [ ] Use failure codes `invalid_request`, `operation_conflict`, `session_changed`, `compression_failed`, `not_prepared`, and `busy`.
-- [ ] Include `CtreeRangeCompactData` only on an applied result.
-- [ ] Export all request, result, status, code, and transport types through `./protocol`.
-- [ ] Define the in-process transport as `{ request, context }`, where `context` is an `ExtensionCommandContext` and is not part of the serializable schema.
-- [ ] Implement `registerRangeCompressionService(pi)` in `src/range-compression.ts`.
-- [ ] Key prepared work by `sessionId:operationId`.
-- [ ] Compare repeat requests without `requestId` and return `operation_conflict` for different data under the same operation key.
-- [ ] Return the prior outcome for an identical in-flight request.
-- [ ] Keep one mutation lock per session and return `busy` for concurrent mutation.
-- [ ] Keep one `AbortController` per pending preparation and abort it on `cancel` or `session_shutdown`.
-- [ ] Remove prepared and pending state during `session_shutdown`.
-- [ ] Emit exactly one validated result for each validated request.
-- [ ] Register the service from `src/index.ts`.
+- [x] Add `RANGE_COMPRESSION_REQUEST = 'pi-context-compress/v1/range/request'` to `src/protocol.ts`.
+- [x] Add `RANGE_COMPRESSION_RESULT = 'pi-context-compress/v1/range/result'` to `src/protocol.ts`.
+- [x] Add an exact TypeBox `RangeCompressionRequestSchema` as a discriminated union.
+- [x] Define `prepare` requests with required `requestId`, `sessionId`, `operationId`, `startEntryId`, `endEntryId`, and `review`; allow only optional `anchorEntryId` and `instructions` in addition.
+- [x] Define exact `apply`, `cancel`, and `status` requests with required `requestId`, `sessionId`, and `operationId`.
+- [x] Add an exact `RangeCompressionResultSchema` with statuses `prepared`, `applied`, `cancelled`, `missing`, and `failed`.
+- [x] Use failure codes `invalid_request`, `operation_conflict`, `session_changed`, `compression_failed`, `not_prepared`, and `busy`.
+- [x] Include `CtreeRangeCompactData` only on an applied result.
+- [x] Export all request, result, status, code, and transport types through `./protocol`.
+- [x] Define the in-process transport as `{ request, context }`, where `context` is an `ExtensionCommandContext` and is not part of the serializable schema.
+- [x] Implement `registerRangeCompressionService(pi)` in `src/range-compression.ts`.
+- [x] Key prepared work by `sessionId:operationId`.
+- [x] Compare repeat requests without `requestId` and return `operation_conflict` for different data under the same operation key.
+- [x] Return the prior outcome for an identical in-flight request.
+- [x] Keep one mutation lock per session and return `busy` for concurrent mutation.
+- [x] Keep one `AbortController` per pending preparation and abort it on `cancel` or `session_shutdown`.
+- [x] Remove prepared and pending state during `session_shutdown`.
+- [x] Emit exactly one validated result for each validated request.
+- [x] Register the service from `src/index.ts`.
 
 **Completion gate:** A separately loaded extension can prepare, inspect status, apply, cancel, and correlate automated compression through `pi.events` without private Pi access.
 

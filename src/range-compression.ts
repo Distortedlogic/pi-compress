@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
 	BorderedLoader,
 	type ExtensionAPI,
@@ -6,6 +7,7 @@ import {
 	type SessionTreeNode,
 	TreeSelectorComponent,
 } from "@earendil-works/pi-coding-agent";
+import { Value } from "typebox/value";
 import { estimateTextTokens, fmtTokens } from "./core/estimate.ts";
 import {
 	type RangeCandidate,
@@ -20,7 +22,21 @@ import {
 import { serializeEntry } from "./core/serialize.ts";
 import { draftRangeSummary, realDraft } from "./extension/draft.ts";
 import { refreshAmbient } from "./panel.ts";
-import { CTREE_RANGE_COMPACT, CTREE_RANGE_TAIL, type CtreeRangeCompactData } from "./protocol.ts";
+import {
+	CTREE_RANGE_COMPACT,
+	CTREE_RANGE_TAIL,
+	type CtreeRangeCompactData,
+	RANGE_COMPRESSION_REQUEST,
+	RANGE_COMPRESSION_RESULT,
+	type RangeCompressionFailureCode,
+	type RangeCompressionPrepareRequest,
+	type RangeCompressionRequest,
+	RangeCompressionRequestSchema,
+	type RangeCompressionResult,
+	RangeCompressionResultSchema,
+	type RangeCompressionTransport,
+	ctreeRangeCompactData,
+} from "./protocol.ts";
 import { snapshotSession } from "./session.ts";
 
 export interface RangeCompressionTarget {
@@ -52,10 +68,32 @@ type ManualPreparationResult =
 	| { status: "cancelled" }
 	| { status: "failed"; error: string };
 
+type RangeCompressionServiceOutcome =
+	| { status: "prepared" }
+	| { status: "applied"; details: CtreeRangeCompactData }
+	| { status: "cancelled" }
+	| { status: "missing" }
+	| { status: "failed"; code: RangeCompressionFailureCode };
+
+interface StoredRangeCompression {
+	readonly request: RangeCompressionPrepareRequest;
+	readonly prepared: PreparedRangeCompression;
+}
+
+interface PendingRangeCompression {
+	readonly request: RangeCompressionRequest;
+	readonly promise: Promise<RangeCompressionServiceOutcome>;
+	readonly controller?: AbortController;
+}
+
 interface RangeSelectorProjection {
 	tree: SessionTreeNode[];
 	entryIds: string[];
 }
+
+class InvalidRangeCompressionRequestError extends Error {}
+
+class RangeCompressionSessionChangedError extends Error {}
 
 function immutablePlan(plan: RewritePlan): RewritePlan {
 	return Object.freeze({
@@ -69,10 +107,10 @@ function immutablePlan(plan: RewritePlan): RewritePlan {
 
 function assertStableSession(ctx: ExtensionCommandContext, sessionId: string, sourceLeafId: string | null): void {
 	if (ctx.sessionManager.getSessionId() !== sessionId || ctx.sessionManager.getLeafId() !== sourceLeafId) {
-		throw new Error("The session changed during range compression.");
+		throw new RangeCompressionSessionChangedError("The session changed during range compression.");
 	}
 	if (ctx.hasPendingMessages()) {
-		throw new Error("Range compression cannot run while messages are pending.");
+		throw new InvalidRangeCompressionRequestError("Range compression cannot run while messages are pending.");
 	}
 }
 
@@ -222,16 +260,26 @@ export async function prepareRangeCompression(
 	assertStableSession(ctx, sessionId, sourceLeafId);
 
 	const model = ctx.model;
-	if (!model) throw new Error("No current model is available for range compression.");
+	if (!model) throw new InvalidRangeCompressionRequestError("No current model is available for range compression.");
 	const snapshot = snapshotSession(ctx.sessionManager);
-	const plan = prepareRewrite(snapshot, target.startEntryId, target.endEntryId, {
-		anchorId: target.anchorEntryId,
-	});
+	let plan: RewritePlan;
+	try {
+		plan = prepareRewrite(snapshot, target.startEntryId, target.endEntryId, {
+			anchorId: target.anchorEntryId,
+		});
+	} catch (error) {
+		throw new InvalidRangeCompressionRequestError(error instanceof Error ? error.message : String(error));
+	}
 	const summary = (await draftRangeSummary(realDraft, ctx, plan.source, target.instructions, target.signal)).trim();
 	if (!summary) throw new Error("The model returned an empty range summary.");
 	target.signal?.throwIfAborted();
 	assertStableSession(ctx, sessionId, sourceLeafId);
-	const validatedPlan = immutablePlan(revalidateRewrite(ctx, plan));
+	let validatedPlan: RewritePlan;
+	try {
+		validatedPlan = immutablePlan(revalidateRewrite(ctx, plan));
+	} catch (error) {
+		throw new RangeCompressionSessionChangedError(error instanceof Error ? error.message : String(error));
+	}
 	return Object.freeze({
 		plan: validatedPlan,
 		summary,
@@ -256,9 +304,14 @@ export async function applyPreparedRangeCompression(
 ): Promise<CtreeRangeCompactData | undefined> {
 	await ctx.waitForIdle();
 	if (ctx.hasPendingMessages()) {
-		throw new Error("Range compression cannot run while messages are pending.");
+		throw new InvalidRangeCompressionRequestError("Range compression cannot run while messages are pending.");
 	}
-	const plan = revalidateRewrite(ctx, prepared.plan);
+	let plan: RewritePlan;
+	try {
+		plan = revalidateRewrite(ctx, prepared.plan);
+	} catch (error) {
+		throw new RangeCompressionSessionChangedError(error instanceof Error ? error.message : String(error));
+	}
 	const details = compressionDetails(plan, prepared.summary, prepared.summaryModel, prepared.operationId);
 	const result = await applyRewrite(pi, ctx, plan, {
 		messages: [
@@ -284,6 +337,201 @@ export async function compressRange(
 	if (!approved) return { status: "cancelled" };
 	const details = await applyPreparedRangeCompression(pi, ctx, approved);
 	return details ? { status: "applied", details } : { status: "cancelled" };
+}
+
+function sameRangeCompressionRequest(left: RangeCompressionRequest, right: RangeCompressionRequest): boolean {
+	const { requestId: _leftRequestId, ...leftRequest } = left;
+	const { requestId: _rightRequestId, ...rightRequest } = right;
+	return isDeepStrictEqual(leftRequest, rightRequest);
+}
+
+function appliedRangeCompression(ctx: ExtensionCommandContext, operationId: string): CtreeRangeCompactData | undefined {
+	for (const entry of [...ctx.sessionManager.getBranch()].reverse()) {
+		const details = ctreeRangeCompactData(entry);
+		if (details?.operationId === operationId) return structuredClone(details);
+	}
+	return undefined;
+}
+
+function isRangeCompressionContext(value: unknown): value is ExtensionCommandContext {
+	if (!value || typeof value !== "object") return false;
+	const context = value as Partial<ExtensionCommandContext>;
+	return (
+		typeof context.sessionManager?.getSessionId === "function" &&
+		typeof context.waitForIdle === "function" &&
+		typeof context.navigateTree === "function"
+	);
+}
+
+export function registerRangeCompressionService(pi: ExtensionAPI): void {
+	const prepared = new Map<string, StoredRangeCompression>();
+	const pending = new Map<string, PendingRangeCompression>();
+	const cancelled = new Map<string, string>();
+	const mutating = new Set<string>();
+
+	pi.on("session_shutdown", (_event, ctx) => {
+		const sessionId = ctx.sessionManager.getSessionId();
+		for (const [key, job] of pending) {
+			if (job.request.sessionId !== sessionId) continue;
+			job.controller?.abort();
+			pending.delete(key);
+		}
+		for (const [key, value] of prepared) {
+			if (value.request.sessionId === sessionId) prepared.delete(key);
+		}
+		for (const [key, value] of cancelled) {
+			if (value === sessionId) cancelled.delete(key);
+		}
+		mutating.delete(sessionId);
+	});
+
+	async function execute(
+		request: RangeCompressionRequest,
+		ctx: ExtensionCommandContext,
+		key: string,
+		controller?: AbortController,
+	): Promise<RangeCompressionServiceOutcome> {
+		if (ctx.sessionManager.getSessionId() !== request.sessionId) {
+			return { status: "failed", code: "session_changed" };
+		}
+		const applied = appliedRangeCompression(ctx, request.operationId);
+		if (applied) return { status: "applied", details: applied };
+
+		if (request.action === "cancel") {
+			if (mutating.has(request.sessionId)) return { status: "failed", code: "busy" };
+			pending.get(key)?.controller?.abort();
+			pending.delete(key);
+			prepared.delete(key);
+			cancelled.set(key, request.sessionId);
+			return { status: "cancelled" };
+		}
+		if (cancelled.has(key)) return { status: "cancelled" };
+
+		const saved = prepared.get(key);
+		if (request.action === "status") return { status: saved ? "prepared" : "missing" };
+
+		if (request.action === "prepare") {
+			if (saved) {
+				return sameRangeCompressionRequest(saved.request, request)
+					? { status: "prepared" }
+					: { status: "failed", code: "operation_conflict" };
+			}
+			if (!ctx.isIdle() || ctx.hasPendingMessages() || !ctx.model) {
+				return { status: "failed", code: "invalid_request" };
+			}
+			try {
+				const value = await prepareRangeCompression(ctx, {
+					operationId: request.operationId,
+					startEntryId: request.startEntryId,
+					endEntryId: request.endEntryId,
+					anchorEntryId: request.anchorEntryId,
+					instructions: request.instructions,
+					signal: controller?.signal,
+				});
+				if (controller?.signal.aborted || cancelled.has(key)) return { status: "cancelled" };
+				const approved = request.review ? await reviewRangeCompression(ctx, value) : value;
+				if (controller?.signal.aborted || cancelled.has(key)) return { status: "cancelled" };
+				if (!approved) {
+					cancelled.set(key, request.sessionId);
+					return { status: "cancelled" };
+				}
+				if (
+					ctx.sessionManager.getSessionId() !== request.sessionId ||
+					ctx.sessionManager.getLeafId() !== approved.plan.sourceLeafId
+				) {
+					return { status: "failed", code: "session_changed" };
+				}
+				prepared.set(key, { request: structuredClone(request), prepared: approved });
+				return { status: "prepared" };
+			} catch (error) {
+				if (controller?.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+					return { status: "cancelled" };
+				}
+				if (
+					error instanceof RangeCompressionSessionChangedError ||
+					ctx.sessionManager.getSessionId() !== request.sessionId
+				) {
+					return { status: "failed", code: "session_changed" };
+				}
+				return error instanceof InvalidRangeCompressionRequestError
+					? { status: "failed", code: "invalid_request" }
+					: { status: "failed", code: "compression_failed" };
+			}
+		}
+
+		if (!saved) return { status: "failed", code: "not_prepared" };
+		if (mutating.has(request.sessionId)) return { status: "failed", code: "busy" };
+		mutating.add(request.sessionId);
+		try {
+			const details = await applyPreparedRangeCompression(pi, ctx, saved.prepared);
+			if (!details) {
+				prepared.delete(key);
+				cancelled.set(key, request.sessionId);
+				return { status: "cancelled" };
+			}
+			prepared.delete(key);
+			return { status: "applied", details };
+		} catch (error) {
+			if (
+				error instanceof RangeCompressionSessionChangedError ||
+				ctx.sessionManager.getSessionId() !== request.sessionId
+			) {
+				return { status: "failed", code: "session_changed" };
+			}
+			return error instanceof InvalidRangeCompressionRequestError
+				? { status: "failed", code: "invalid_request" }
+				: { status: "failed", code: "compression_failed" };
+		} finally {
+			mutating.delete(request.sessionId);
+		}
+	}
+
+	pi.events.on(RANGE_COMPRESSION_REQUEST, async (value: unknown) => {
+		const transport = value as Partial<RangeCompressionTransport> | undefined;
+		if (!transport || !Value.Check(RangeCompressionRequestSchema, transport.request)) return;
+		const request = transport.request;
+		const key = `${request.sessionId}:${request.operationId}`;
+		let outcome: RangeCompressionServiceOutcome;
+		try {
+			if (!isRangeCompressionContext(transport.context)) {
+				outcome = { status: "failed", code: "session_changed" };
+			} else {
+				const flight = pending.get(key);
+				if (flight && request.action !== "cancel") {
+					if (sameRangeCompressionRequest(flight.request, request)) {
+						outcome = await flight.promise;
+					} else if (flight.request.action === "prepare" && request.action === "prepare") {
+						outcome = { status: "failed", code: "operation_conflict" };
+					} else {
+						outcome = { status: "failed", code: "busy" };
+					}
+				} else {
+					const controller = request.action === "prepare" ? new AbortController() : undefined;
+					const job: PendingRangeCompression = {
+						request,
+						controller,
+						promise: execute(request, transport.context, key, controller),
+					};
+					if (request.action !== "cancel") pending.set(key, job);
+					try {
+						outcome = await job.promise;
+					} finally {
+						if (pending.get(key) === job) pending.delete(key);
+					}
+				}
+			}
+		} catch {
+			outcome = { status: "failed", code: "compression_failed" };
+		}
+		const result = {
+			v: 1,
+			requestId: request.requestId,
+			sessionId: request.sessionId,
+			operationId: request.operationId,
+			...outcome,
+		} satisfies RangeCompressionResult;
+		if (Value.Check(RangeCompressionResultSchema, result)) pi.events.emit(RANGE_COMPRESSION_RESULT, result);
+	});
 }
 
 async function prepareWithLoader(
