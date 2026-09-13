@@ -185,17 +185,17 @@
 
 ## Work unit 11 — Final cleanup and validation
 
-- [ ] Remove dead imports, obsolete range code, stale comments, and old source-test paths.
-- [ ] Confirm that no manual compression path can write before summary approval.
-- [ ] Confirm that no automated path defaults silently to no review.
-- [ ] Confirm that all rewrite paths call `ctx.navigateTree(..., { summarize: false })` and never edit session files.
-- [ ] Confirm that all external payloads pass TypeBox validation before use and before emission.
-- [ ] Run `npm run format`.
-- [ ] Run `npm test`.
-- [ ] Run `npm run check`.
-- [ ] Run `npm run knip`.
-- [ ] Run `npm pack --dry-run` and confirm that `tests/` is absent and all three public entry points are present.
-- [ ] Review `git diff --check` and the final diff.
-- [ ] Commit only the completed implementation with a minimal, accurate message.
+- [x] Remove dead imports, obsolete range code, stale comments, and old source-test paths.
+- [x] Confirm that no manual compression path can write before summary approval.
+- [x] Confirm that no automated path defaults silently to no review.
+- [x] Confirm that all rewrite paths call `ctx.navigateTree(..., { summarize: false })` and never edit session files.
+- [x] Confirm that all external payloads pass TypeBox validation before use and before emission.
+- [x] Run `npm run format`.
+- [x] Run `npm test`.
+- [x] Run `npm run check`.
+- [x] Run `npm run knip`.
+- [x] Run `npm pack --dry-run` and confirm that `tests/` is absent and all three public entry points are present.
+- [x] Review `git diff --check` and the final diff.
+- [x] Commit only the completed implementation with a minimal, accurate message.
 
 **Final acceptance:** All validation commands pass. Manual and automated range compression share one implementation. Manual selection shows only legal entries on the active context path. Other extensions can use the direct package API or the generic Pi event protocol.
