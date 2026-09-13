@@ -29,16 +29,16 @@
 
 ## Work unit 2 — Extract the shared range-rewrite core
 
-- [ ] Create `src/core/range-rewrite.ts` for the actual shared rewrite implementation.
-- [ ] Move `RangeCandidate`, `RewritePlan`, `PrepareRewriteOptions`, `RewriteOutput`, and `ApplyRewriteResult` into this module.
-- [ ] Move `rangeCandidates`, `candidateByEntryId`, `resolveRangeEndpoint`, `prepareRewrite`, `revalidateRewrite`, `applyRewrite`, and `sourceSha8` into this module.
-- [ ] Keep source hashing, source-leaf checks, session-ID checks, selected-ID checks, continuation-ID checks, and final revalidation in this module.
-- [ ] Make complete assistant tool calls and their contiguous tool results one atomic candidate.
-- [ ] Mark all context-inert session metadata as protected boundaries. This includes `custom`, `model_change`, `thinking_level_change`, `label`, and `session_info` entries.
-- [ ] Keep compaction entries, branch summaries, decision records, incomplete user turns, incomplete tool groups, orphan tool results, and entries without a preceding anchor protected.
-- [ ] Make a selected range invalid when it starts, ends, or crosses a protected candidate.
-- [ ] Update crop planning and batch planning to import this core instead of keeping range safety in `src/compression.ts`.
-- [ ] Leave crop-specific planning and rendering in `src/compression.ts`.
+- [x] Create `src/core/range-rewrite.ts` for the actual shared rewrite implementation.
+- [x] Move `RangeCandidate`, `RewritePlan`, `PrepareRewriteOptions`, `RewriteOutput`, and `ApplyRewriteResult` into this module.
+- [x] Move `rangeCandidates`, `candidateByEntryId`, `resolveRangeEndpoint`, `prepareRewrite`, `revalidateRewrite`, `applyRewrite`, and `sourceSha8` into this module.
+- [x] Keep source hashing, source-leaf checks, session-ID checks, selected-ID checks, continuation-ID checks, and final revalidation in this module.
+- [x] Make complete assistant tool calls and their contiguous tool results one atomic candidate.
+- [x] Mark all context-inert session metadata as protected boundaries. This includes `custom`, `model_change`, `thinking_level_change`, `label`, and `session_info` entries.
+- [x] Keep compaction entries, branch summaries, decision records, incomplete user turns, incomplete tool groups, orphan tool results, and entries without a preceding anchor protected.
+- [x] Make a selected range invalid when it starts, ends, or crosses a protected candidate.
+- [x] Update crop planning and batch planning to import this core instead of keeping range safety in `src/compression.ts`.
+- [x] Leave crop-specific planning and rendering in `src/compression.ts`.
 
 **Completion gate:** Crop, manual range compression, and batch compression use the same candidate, plan, hash, revalidation, and append-only apply code.
 

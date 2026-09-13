@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
-import { type RewritePlan, applyRewrite, prepareRewrite, rangeCandidates, revalidateRewrite } from "./compression.ts";
+import {
+	type RewritePlan,
+	applyRewrite,
+	prepareRewrite,
+	rangeCandidates,
+	revalidateRewrite,
+} from "./core/range-rewrite.ts";
 import { textOfContent } from "./core/serialize.ts";
 import { type MessageEntry, isMessageEntry } from "./core/types.ts";
 import { draftRangeSummary, realDraft } from "./extension/draft.ts";

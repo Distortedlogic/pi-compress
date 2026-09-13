@@ -10,23 +10,25 @@ import type { Component } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import { applyCompression, prepareCompression, registerBatchCompression } from "../src/batch.ts";
 import {
-	applyRewrite,
 	autoSelect,
-	candidateByEntryId,
 	contextTurns,
 	cropCandidates,
 	planCrop,
 	planRemoveTurns,
-	prepareRewrite,
-	rangeCandidates,
 	rangeCompressHandler,
 	renderRangeTail,
 	renderReconstruction,
-	resolveRangeEndpoint,
-	sourceSha8,
 } from "../src/compression.ts";
 import { aggregateConsumers } from "../src/core/consumers.ts";
 import { band, estimateEntryTokens, fmtTokens } from "../src/core/estimate.ts";
+import {
+	applyRewrite,
+	candidateByEntryId,
+	prepareRewrite,
+	rangeCandidates,
+	resolveRangeEndpoint,
+	sourceSha8,
+} from "../src/core/range-rewrite.ts";
 import { serializeEntries } from "../src/core/serialize.ts";
 import {
 	type BatchSnapshot,
