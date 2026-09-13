@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decisionsOnPath, extractForks, nearestOpenFork, siblingForks } from "../../core/ctree.ts";
+import { decisionsOnPath, extractForks, nearestOpenFork, siblingForks } from "../../branches.ts";
 import {
 	CTREE_CLOSE,
 	CTREE_CROP,

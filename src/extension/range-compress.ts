@@ -4,6 +4,7 @@ import {
 	TreeSelectorComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Loader } from "@earendil-works/pi-tui";
+import { deriveState, modelKey } from "../branches.ts";
 import {
 	CTREE_RANGE_COMPACT,
 	CTREE_RANGE_TAIL,
@@ -21,7 +22,6 @@ import {
 import { refreshAmbient } from "./ambient.ts";
 import { type Deps, draftRangeSummary } from "./draft.ts";
 import { applyRewrite } from "./rewrite.ts";
-import { deriveState, modelKey } from "./state.ts";
 
 type RangePhase = "start" | "end";
 type RangeCompressionStage = "Drafting summary" | "Checking selected range" | "Applying compression";

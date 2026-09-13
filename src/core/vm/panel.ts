@@ -6,6 +6,7 @@
  */
 
 import type { SessionTreeNode } from "@earendil-works/pi-coding-agent";
+import { type ForkInfo, type ForkPresentation, decisionsOnPath, nearestOpenFork } from "../../branches.ts";
 import {
 	CTREE_CROP,
 	CTREE_CROP_TAIL,
@@ -30,7 +31,6 @@ import {
 	planCrop,
 	planRemoveTurns,
 } from "../crop.ts";
-import { type ForkInfo, type ForkPresentation, decisionsOnPath, nearestOpenFork } from "../ctree.ts";
 import { type Band, band, estimateContextTokens, estimateEntryTokens, fmtTokens } from "../estimate.ts";
 import { serializeEntry, textOfContent } from "../serialize.ts";
 import type { SessionEntry, UserContent } from "../types.ts";

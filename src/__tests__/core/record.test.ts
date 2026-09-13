@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exportDecisionsMarkdown, renderDecisionRecord } from "../../core/record.ts";
+import { exportDecisionsMarkdown, renderDecisionRecord } from "../../branches.ts";
 
 describe("renderDecisionRecord", () => {
 	it("renders the full §6 template including Assumptions", () => {

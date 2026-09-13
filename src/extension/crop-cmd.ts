@@ -6,6 +6,7 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { deriveState } from "../branches.ts";
 import {
 	CTREE_CROP,
 	CTREE_CROP_TAIL,
@@ -19,7 +20,6 @@ import {
 import { refreshAmbient } from "./ambient.ts";
 import { openPanel } from "./panel-cmd.ts";
 import { applyRewrite } from "./rewrite.ts";
-import { deriveState } from "./state.ts";
 
 interface CropFlags {
 	auto: boolean;

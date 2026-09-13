@@ -1,8 +1,8 @@
 /** Decision-record drafting through Pi's public model registry. */
 
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { type ModelLike, resolveModel } from "../branches.ts";
 import { estimateTextTokens } from "../core/index.ts";
-import { type ModelLike, resolveModel } from "./state.ts";
 
 export type DraftFn = (
 	ctx: ExtensionCommandContext,

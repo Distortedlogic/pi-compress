@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { branchHandler, registerBranch, rememberModels, resetModelCompletions } from "../../branches.ts";
 import { type CtreeForkData, ctreeForkData } from "../../core/index.ts";
-import { branchHandler, registerBranch, rememberModels, resetModelCompletions } from "../../extension/branch.ts";
 import { entriesByType, makeFake } from "./fake-pi.ts";
 
 describe("/branch", () => {
@@ -76,7 +76,7 @@ describe("/branch model autocomplete", () => {
 describe("/merge and /crop flag completions carry a label", () => {
 	it("every flag suggestion has both value and label", async () => {
 		const { pi, completions } = makeFake();
-		const { registerMerge } = await import("../../extension/merge.ts");
+		const { registerMerge } = await import("../../branches.ts");
 		const { registerCrop } = await import("../../extension/crop-cmd.ts");
 		registerMerge(pi, { draft: async () => "" });
 		registerCrop(pi);

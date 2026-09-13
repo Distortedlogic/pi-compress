@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { type ExtensionAPI, type ExtensionCommandContext, createEventBus } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
+import { undoHandler } from "../../branches.ts";
 import { prepareRewrite } from "../../core/index.ts";
 import { registerBatchCompression } from "../../extension/batch-service.ts";
 import { applyRangeCompressionPlan } from "../../extension/range-compress.ts";
-import { undoHandler } from "../../extension/undo.ts";
 import piContextTree from "../../index.ts";
 import {
 	COMPRESSION_ENTRY,
@@ -57,7 +57,7 @@ describe("extension entry point", () => {
 				timestamp: Date.parse("2026-06-12T10:00:00Z"),
 			},
 			{ expanded: false },
-			undefined,
+			{ fg: (_color: string, text: string) => text },
 		);
 		const lines = (component?.render(90) ?? []).map(strip);
 		expect(lines[0]).toContain("◆ feat-x");

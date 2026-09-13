@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractForks } from "../../core/ctree.ts";
+import { extractForks } from "../../branches.ts";
 import { PanelVm } from "../../core/vm/panel.ts";
 import { snapshotSession } from "../../session.ts";
 import { PiSessionFixture, filler } from "../session-fixture.ts";

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { branchHandler } from "../../extension/branch.ts";
+import { branchHandler } from "../../branches.ts";
+import { mergeHandler } from "../../branches.ts";
+import { undoHandler } from "../../branches.ts";
 import type { Deps } from "../../extension/draft.ts";
-import { mergeHandler } from "../../extension/merge.ts";
-import { undoHandler } from "../../extension/undo.ts";
 import { type FakeWorld, makeFake } from "./fake-pi.ts";
 
 const deps: Deps = { draft: async () => "## Decision: fix-flaky-test\n**Outcome:** done.\n" };

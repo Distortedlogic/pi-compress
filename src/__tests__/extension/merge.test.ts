@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { branchHandler } from "../../branches.ts";
+import { mergeHandler } from "../../branches.ts";
 import type { CtreeCloseData } from "../../core/index.ts";
-import { branchHandler } from "../../extension/branch.ts";
 import type { Deps } from "../../extension/draft.ts";
-import { mergeHandler } from "../../extension/merge.ts";
 import { type FakeWorld, entriesByType, makeFake } from "./fake-pi.ts";
 
 const CANNED_RECORD = "## Decision: fix-flaky-test\n**Outcome:** fixed tmpdir collision.\n";
@@ -58,6 +58,19 @@ describe("/merge --squash", () => {
 		expect(w.session.entries.indexOf(decisions[0]!)).toBeLessThan(w.session.entries.indexOf(closes[0]!));
 		// trunk model restored
 		expect(w.calls.setModel.at(-1)?.id).toBe("opus-4.8");
+	});
+
+	it("uses the manual template without an LLM for --no-llm", async () => {
+		const w = makeFake();
+		const deps = depsWith();
+		await seedBranch(w);
+		w.ui.editorQueue.push("__ACCEPT_PREFILL__");
+
+		await mergeHandler(w.pi, w.ctx, "--no-llm", deps);
+
+		expect(deps.draftCalls).toHaveLength(0);
+		expect(entriesByType(w.session, "custom_message", "ctree/decision")).toHaveLength(1);
+		expect(entriesByType(w.session, "custom", "ctree/close")).toHaveLength(1);
 	});
 
 	it("aborts cleanly when the editor is cancelled — nothing written, no navigation", async () => {

@@ -4,7 +4,8 @@
  */
 
 import chalk from "chalk";
-import type { Band, ForkPresentation } from "../core/index.ts";
+import type { ForkPresentation } from "../branches.ts";
+import type { Band } from "../core/index.ts";
 
 export interface CtreeTheme {
 	brand: (s: string) => string;

@@ -16,9 +16,9 @@
 
 import { basename } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type SessionState, deriveState } from "../branches.ts";
 import { aggregateConsumers, band, estimateContextTokens } from "../core/index.ts";
 import { defaultTheme, renderGauge } from "../tui/index.ts";
-import { type SessionState, deriveState } from "./state.ts";
 
 let warnedRed = false;
 

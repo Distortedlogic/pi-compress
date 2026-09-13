@@ -190,20 +190,20 @@ src/
 
 **Depends on:** WU-05
 
-- [ ] Merge branch state, branch extraction, merge, undo, decision rendering, and decision export into `src/branches.ts`.
-- [ ] Use `yargs-parser` for merge and decision command arguments.
-- [ ] Preserve duplicate-name checks and optional branch-model selection.
-- [ ] Preserve plain string model completion without retaining the event context.
-- [ ] Preserve all merge modes and the mandatory edit or confirm gate.
-- [ ] Preserve decision-before-close append order.
-- [ ] Preserve tournament sibling closure and epitaphs.
-- [ ] Preserve trunk-model restoration and warning behavior.
-- [ ] Preserve append-only undo targets for branch, close, crop, selected range, and batch compression.
-- [ ] Render decision cards with Pi TUI `Text` or `Markdown`; remove the separate decision-card module.
+- [x] Merge branch state, branch extraction, merge, undo, decision rendering, and decision export into `src/branches.ts`.
+- [x] Use `yargs-parser` for merge and decision command arguments.
+- [x] Preserve duplicate-name checks and optional branch-model selection.
+- [x] Preserve plain string model completion without retaining the event context.
+- [x] Preserve all merge modes and the mandatory edit or confirm gate.
+- [x] Preserve decision-before-close append order.
+- [x] Preserve tournament sibling closure and epitaphs.
+- [x] Preserve trunk-model restoration and warning behavior.
+- [x] Preserve append-only undo targets for branch, close, crop, selected range, and batch compression.
+- [x] Render decision cards with Pi TUI `Text` or `Markdown`; remove the separate decision-card module.
 
 **Gate**
 
-- [ ] Branch, merge, discard, tournament, decision export, model restore, and undo match the baseline.
+- [x] Branch, merge, discard, tournament, decision export, model restore, and undo match the baseline.
 
 ### WU-07 — Consolidate crop, range, and batch compression
 

@@ -5,22 +5,12 @@
  * after re-validation (TRD §6).
  */
 
-import { writeFileSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import {
-	type PanelAction,
-	type PanelInput,
-	type PanelView,
-	ctreeDecisionDetails,
-	decisionsOnPath,
-	exportDecisionsMarkdown,
-	textOfContent,
-} from "../core/index.ts";
+import { branchHandler, deriveState, exportDecisions, notifyDecisions, parseDecisionArgs } from "../branches.ts";
+import type { PanelAction, PanelInput, PanelView } from "../core/index.ts";
 import { ContextPanel } from "../tui/index.ts";
-import { branchHandler } from "./branch.ts";
 import type { Deps } from "./draft.ts";
-import { deriveState } from "./state.ts";
 
 export interface PanelOpenOptions {
 	initialView?: PanelView;
@@ -82,41 +72,6 @@ function isCommandContext(ctx: ExtensionContext): ctx is ExtensionCommandContext
 	return "navigateTree" in ctx;
 }
 
-/** /decisions without a TUI host (RPC/headless): compact text listing, newest first. */
-function notifyDecisions(ctx: ExtensionContext): void {
-	const decs = decisionsOnPath(ctx.sessionManager.getBranch());
-	if (decs.length === 0) {
-		ctx.ui.notify("no decision records on this trunk yet — /merge → squash creates them (F7)", "info");
-		return;
-	}
-	const lines = [...decs].reverse().map((d) => {
-		const det = ctreeDecisionDetails(d);
-		const text = textOfContent(d.content);
-		const outcome = text.split("\n").find((l) => l.startsWith("**Outcome:**")) ?? text.split("\n")[0] ?? "";
-		const date = (d.timestamp ?? "").slice(0, 10);
-		return `◆ ${det?.branchName ?? "decision"} (${date}) ${outcome.replace("**Outcome:**", "").trim()}`;
-	});
-	ctx.ui.notify(lines.join("\n"), "info");
-}
-
-/** /decisions --export [path]: write all trunk decision records to portable markdown. */
-function exportDecisions(ctx: ExtensionContext, args: string): void {
-	const decs = decisionsOnPath(ctx.sessionManager.getBranch());
-	const md = exportDecisionsMarkdown(
-		decs.map((d) => textOfContent(d.content)),
-		basename(ctx.cwd),
-	);
-	const pathArg = args.replace("--export", "").trim().split(/\s+/).filter(Boolean)[0];
-	const outPath = resolve(ctx.cwd, pathArg || "ctree-decisions.md");
-	try {
-		writeFileSync(outPath, md, "utf8");
-	} catch (err) {
-		ctx.ui.notify(`could not write ${outPath}: ${(err as Error).message}`, "error");
-		return;
-	}
-	ctx.ui.notify(`wrote ${decs.length} decision record${decs.length === 1 ? "" : "s"} → ${outPath}`, "info");
-}
-
 export async function executePanelAction(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
@@ -146,7 +101,7 @@ export async function executePanelAction(
 			return;
 		}
 		case "merge": {
-			const { mergeHandler } = await import("./merge.ts");
+			const { mergeHandler } = await import("../branches.ts");
 			await mergeHandler(pi, ctx, "", deps);
 			return;
 		}
@@ -192,8 +147,9 @@ export function registerPanel(pi: ExtensionAPI, deps: Deps): void {
 	pi.registerCommand("decisions", {
 		description: "pi-context-tree: decision records on the current trunk (F7) — --export [path] for portable markdown",
 		handler: async (args, ctx) => {
-			if (args.includes("--export")) {
-				exportDecisions(ctx, args);
+			const parsed = parseDecisionArgs(args);
+			if (parsed.export) {
+				exportDecisions(ctx, parsed.exportPath);
 				return;
 			}
 			if (!ctx.ui.custom) {
