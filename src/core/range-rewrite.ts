@@ -19,19 +19,19 @@ export interface RangeCandidate {
 }
 
 export interface RewritePlan {
-	sessionId: string;
-	sourceLeafId: string;
-	anchorId: string;
-	startEntryId: string;
-	endEntryId: string;
-	selectedEntryIds: string[];
-	continuationEntryIds: string[];
-	selectedEntries: SessionEntry[];
-	continuationEntries: SessionEntry[];
-	source: string;
-	continuationSerialized: string;
-	selectedEstTokens: number;
-	sourceSha256: string;
+	readonly sessionId: string;
+	readonly sourceLeafId: string;
+	readonly anchorId: string;
+	readonly startEntryId: string;
+	readonly endEntryId: string;
+	readonly selectedEntryIds: readonly string[];
+	readonly continuationEntryIds: readonly string[];
+	readonly selectedEntries: readonly SessionEntry[];
+	readonly continuationEntries: readonly SessionEntry[];
+	readonly source: string;
+	readonly continuationSerialized: string;
+	readonly selectedEstTokens: number;
+	readonly sourceSha256: string;
 }
 
 export interface PrepareRewriteOptions {

@@ -76,24 +76,24 @@
 
 ## Work unit 5 — Implement the reusable direct API
 
-- [ ] Create `src/range-compression.ts` as the real high-level range-compression implementation.
-- [ ] Define and export `RangeCompressionTarget` with these fields: `operationId`, `startEntryId`, `endEntryId`, optional `anchorEntryId`, optional `instructions`, and optional `signal`.
-- [ ] Define and export `RangeCompressionInput` as `RangeCompressionTarget` plus the required `review` boolean.
-- [ ] Define and export `PreparedRangeCompression` with the immutable rewrite plan, current summary text, summary model, and operation ID.
-- [ ] Define and export `RangeCompressionOutcome` as `{ status: 'applied'; details: CtreeRangeCompactData } | { status: 'cancelled' }`.
-- [ ] Implement and export `prepareRangeCompression(ctx, target): Promise<PreparedRangeCompression>`.
-- [ ] Make `prepareRangeCompression` wait for idle state and reject pending messages, a changed session, an invalid range, and a missing current model.
-- [ ] Draft with the current model through `ctx.modelRegistry.complete()`.
-- [ ] Pass the supplied abort signal to the model call.
-- [ ] Implement and export `reviewRangeCompression(ctx, prepared): Promise<PreparedRangeCompression | undefined>`.
-- [ ] Make `reviewRangeCompression` return an updated immutable value after approval and `undefined` when the editor closes or returns empty text.
-- [ ] Implement and export `applyPreparedRangeCompression(pi, ctx, prepared): Promise<CtreeRangeCompactData | undefined>`.
-- [ ] Revalidate immediately before navigation and return `undefined` when navigation is cancelled.
-- [ ] Apply the standard range summary as `CTREE_RANGE_TAIL`, then append `CTREE_RANGE_COMPACT`.
-- [ ] Include `operationId` in `CtreeRangeCompactData` as an optional backward-compatible stored field.
-- [ ] Implement and export `compressRange(pi, ctx, input)` as the complete orchestration, not as a forwarding wrapper.
-- [ ] Make `compressRange` prepare, conditionally review, and apply in that order.
-- [ ] Return `{ status: 'cancelled' }` without writes after review or navigation cancellation. Return `{ status: 'applied', details }` after success.
+- [x] Create `src/range-compression.ts` as the real high-level range-compression implementation.
+- [x] Define and export `RangeCompressionTarget` with these fields: `operationId`, `startEntryId`, `endEntryId`, optional `anchorEntryId`, optional `instructions`, and optional `signal`.
+- [x] Define and export `RangeCompressionInput` as `RangeCompressionTarget` plus the required `review` boolean.
+- [x] Define and export `PreparedRangeCompression` with the immutable rewrite plan, current summary text, summary model, and operation ID.
+- [x] Define and export `RangeCompressionOutcome` as `{ status: 'applied'; details: CtreeRangeCompactData } | { status: 'cancelled' }`.
+- [x] Implement and export `prepareRangeCompression(ctx, target): Promise<PreparedRangeCompression>`.
+- [x] Make `prepareRangeCompression` wait for idle state and reject pending messages, a changed session, an invalid range, and a missing current model.
+- [x] Draft with the current model through `ctx.modelRegistry.complete()`.
+- [x] Pass the supplied abort signal to the model call.
+- [x] Implement and export `reviewRangeCompression(ctx, prepared): Promise<PreparedRangeCompression | undefined>`.
+- [x] Make `reviewRangeCompression` return an updated immutable value after approval and `undefined` when the editor closes or returns empty text.
+- [x] Implement and export `applyPreparedRangeCompression(pi, ctx, prepared): Promise<CtreeRangeCompactData | undefined>`.
+- [x] Revalidate immediately before navigation and return `undefined` when navigation is cancelled.
+- [x] Apply the standard range summary as `CTREE_RANGE_TAIL`, then append `CTREE_RANGE_COMPACT`.
+- [x] Include `operationId` in `CtreeRangeCompactData` as an optional backward-compatible stored field.
+- [x] Implement and export `compressRange(pi, ctx, input)` as the complete orchestration, not as a forwarding wrapper.
+- [x] Make `compressRange` prepare, conditionally review, and apply in that order.
+- [x] Return `{ status: 'cancelled' }` without writes after review or navigation cancellation. Return `{ status: 'applied', details }` after success.
 
 **Completion gate:** Another extension can import one function and perform safe automated range compression with `review: false`.
 

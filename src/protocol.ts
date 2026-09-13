@@ -106,6 +106,7 @@ export type CtreeDecisionDetails = Static<typeof CtreeDecisionDetailsSchema>;
 export const CtreeRangeCompactDataSchema = Type.Object(
 	{
 		v: Type.Literal(1),
+		operationId: Type.Optional(Type.String()),
 		sourceLeafId: Type.String(),
 		anchorId: Type.String(),
 		startEntryId: Type.String(),

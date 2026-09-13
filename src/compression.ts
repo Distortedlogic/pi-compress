@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { contentText } from "@earendil-works/pi-ai";
 import {
 	BorderedLoader,
@@ -12,7 +12,7 @@ import {
 import { minimatch } from "minimatch";
 import parseArgs from "yargs-parser";
 import { deriveState, modelKey } from "./branches.ts";
-import { estimateEntryTokens, estimateTextTokens, fmtTokens } from "./core/estimate.ts";
+import { estimateEntryTokens, fmtTokens } from "./core/estimate.ts";
 import {
 	type RangeCandidate,
 	type RewritePlan,
@@ -21,20 +21,12 @@ import {
 	prepareRewrite,
 	rangeCandidates,
 	resolveRangeEndpoint,
-	sourceSha8,
 } from "./core/range-rewrite.ts";
 import { serializeEntry } from "./core/serialize.ts";
 import { type Deps, draftRangeSummary } from "./extension/draft.ts";
 import { refreshAmbient } from "./panel.ts";
-import {
-	CTREE_CROP,
-	CTREE_CROP_TAIL,
-	CTREE_RANGE_COMPACT,
-	CTREE_RANGE_TAIL,
-	type CtreeCropDrop,
-	type CtreeCropStub,
-	type CtreeRangeCompactData,
-} from "./protocol.ts";
+import { CTREE_CROP, CTREE_CROP_TAIL, type CtreeCropDrop, type CtreeCropStub } from "./protocol.ts";
+import { applyPreparedRangeCompression } from "./range-compression.ts";
 import { type SessionSnapshot, snapshotEntry, snapshotSession } from "./session.ts";
 
 export interface CropCandidate {
@@ -93,19 +85,6 @@ const PARSER_CONFIGURATION = {
 	"unknown-options-as-args": true,
 } as const;
 const KEEP_MATCH_OPTIONS = { dot: true, matchBase: true } as const;
-
-export function renderRangeTail(plan: RewritePlan, approvedSummary: string): string {
-	const summary = approvedSummary.trim();
-	if (!summary) throw new Error("approved range summary is empty");
-	const header = `[ctree/range-compact: summarized ${plan.selectedEntryIds.length} entries, ~${fmtTokens(
-		plan.selectedEstTokens,
-	)} tokens, source ${sourceSha8(plan)}. Originals preserved at leaf ${plan.sourceLeafId}.]`;
-	const parts = [header, summary];
-	if (plan.continuationSerialized.trim()) {
-		parts.push("[unchanged continuation after compressed range]", plan.continuationSerialized);
-	}
-	return `${parts.join("\n\n")}\n`;
-}
 
 function firstLine(text: string, max = 80): string {
 	const line = text.split("\n", 1)[0] ?? "";
@@ -587,31 +566,11 @@ async function selectNativeEntry(
 	);
 }
 
-function buildRangeCompactData(
-	plan: RewritePlan,
-	approvedSummary: string,
-	summaryModel: string,
-): CtreeRangeCompactData {
-	const summaryEstTokens = estimateTextTokens(approvedSummary);
-	return {
-		v: 1,
-		sourceLeafId: plan.sourceLeafId,
-		anchorId: plan.anchorId,
-		startEntryId: plan.startEntryId,
-		endEntryId: plan.endEntryId,
-		selectedEntryIds: [...plan.selectedEntryIds],
-		selectedEstTokens: plan.selectedEstTokens,
-		summaryEstTokens,
-		reclaimedEstTokens: plan.selectedEstTokens - summaryEstTokens,
-		summaryModel,
-		sourceSha8: sourceSha8(plan),
-	};
-}
-
 async function applyRangeCompressionPlan(
 	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
 	initialPlan: RewritePlan,
+	operationId: string,
 	summaryModel: string,
 	instructions: string | undefined,
 	deps: Deps,
@@ -630,34 +589,35 @@ async function applyRangeCompressionPlan(
 	}
 
 	progress?.("Checking selected range");
-	const details = buildRangeCompactData(initialPlan, generatedSummary, summaryModel);
-	const rebuilt = renderRangeTail(initialPlan, generatedSummary);
 	progress?.("Applying compression");
 	try {
-		const result = await applyRewrite(pi, ctx, initialPlan, {
-			messages: [{ customType: CTREE_RANGE_TAIL, content: rebuilt, display: true, details }],
-			marker: { customType: CTREE_RANGE_COMPACT, data: details },
+		const details = await applyPreparedRangeCompression(pi, ctx, {
+			plan: initialPlan,
+			summary: generatedSummary,
+			summaryModel,
+			operationId,
 		});
-		if (!result.applied) {
+		if (!details) {
 			ctx.ui.notify("range compression cancelled during navigation — nothing written", "warning");
 			return false;
 		}
+		refreshAmbient(pi, ctx);
+		ctx.ui.notify(
+			`compressed range: selected ~${fmtTokens(initialPlan.selectedEstTokens)} · summary ~${fmtTokens(details.summaryEstTokens)} · reclaimed ~${fmtTokens(details.reclaimedEstTokens)} tokens · originals kept at ${initialPlan.sourceLeafId}`,
+			"info",
+		);
+		return true;
 	} catch (error) {
 		ctx.ui.notify(`selected range is no longer valid: ${(error as Error).message} (nothing written)`, "warning");
 		return false;
 	}
-	refreshAmbient(pi, ctx);
-	ctx.ui.notify(
-		`compressed range: selected ~${fmtTokens(initialPlan.selectedEstTokens)} · summary ~${fmtTokens(details.summaryEstTokens)} · reclaimed ~${fmtTokens(details.reclaimedEstTokens)} tokens · originals kept at ${initialPlan.sourceLeafId}`,
-		"info",
-	);
-	return true;
 }
 
 async function runBlockingRangeCompression(
 	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
 	plan: RewritePlan,
+	operationId: string,
 	instructions: string | undefined,
 	deps: Deps,
 ): Promise<boolean> {
@@ -670,7 +630,9 @@ async function runBlockingRangeCompression(
 		ctx.ui.notify("no current model is available for the range summary — nothing written", "error");
 		return false;
 	}
-	if (ctx.mode !== "tui") return applyRangeCompressionPlan(pi, ctx, plan, summaryModel, instructions, deps);
+	if (ctx.mode !== "tui") {
+		return applyRangeCompressionPlan(pi, ctx, plan, operationId, summaryModel, instructions, deps);
+	}
 	const result = await ctx.ui.custom<boolean>(
 		(tui, theme, _keybindings, done) => {
 			const rangeDetails = `summary model ${summaryModel} · ${plan.selectedEntryIds.length} selected entries · ~${fmtTokens(plan.selectedEstTokens)} source tokens`;
@@ -683,7 +645,19 @@ async function runBlockingRangeCompression(
 			};
 			loader.onAbort = () => finish(false);
 			void Promise.resolve()
-				.then(() => applyRangeCompressionPlan(pi, ctx, plan, summaryModel, instructions, deps, () => {}, loader.signal))
+				.then(() =>
+					applyRangeCompressionPlan(
+						pi,
+						ctx,
+						plan,
+						operationId,
+						summaryModel,
+						instructions,
+						deps,
+						() => {},
+						loader.signal,
+					),
+				)
 				.then(finish, (error: unknown) => {
 					if (!loader.signal.aborted) {
 						ctx.ui.notify(`range compression failed: ${(error as Error).message} (nothing else written)`, "error");
@@ -779,7 +753,7 @@ export async function rangeCompressHandler(
 		].join("\n"),
 	);
 	if (!confirmed) return;
-	await runBlockingRangeCompression(pi, ctx, plan, instructions, deps);
+	await runBlockingRangeCompression(pi, ctx, plan, randomUUID(), instructions, deps);
 }
 
 export function registerRangeCompress(pi: ExtensionAPI, deps: Deps): void {

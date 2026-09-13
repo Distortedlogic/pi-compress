@@ -16,7 +16,6 @@ import {
 	planCrop,
 	planRemoveTurns,
 	rangeCompressHandler,
-	renderRangeTail,
 	renderReconstruction,
 } from "../src/compression.ts";
 import { aggregateConsumers } from "../src/core/consumers.ts";
@@ -39,10 +38,23 @@ import {
 	CTREE_CROP,
 	CTREE_CROP_TAIL,
 	CTREE_DECISION,
+	CTREE_RANGE_COMPACT,
+	CTREE_RANGE_TAIL,
 	type CompressionRequest,
 	type CompressionResult,
 	QUEUED_TASK_TAIL,
 } from "../src/protocol.ts";
+import {
+	type PreparedRangeCompression,
+	type RangeCompressionInput,
+	type RangeCompressionOutcome,
+	type RangeCompressionTarget,
+	applyPreparedRangeCompression,
+	compressRange,
+	prepareRangeCompression,
+	renderRangeTail,
+	reviewRangeCompression,
+} from "../src/range-compression.ts";
 import { snapshotSession } from "../src/session.ts";
 
 initTheme("dark");
@@ -453,6 +465,51 @@ describe("shared rewrite apply", () => {
 			CTREE_CROP_TAIL,
 			CTREE_CROP,
 		]);
+	});
+});
+
+describe("direct range compression API", () => {
+	function directWorld() {
+		const session = new MemorySession();
+		session.user("root");
+		const anchor = session.assistant("anchor");
+		const selected = session.assistant("selected");
+		return { session, anchor, selected, ctx: extensionContext(session.manager), pi: mutationApi(session.manager) };
+	}
+
+	it("prepares, reviews, and applies one immutable range value", async () => {
+		const world = directWorld();
+		const target: RangeCompressionTarget = {
+			operationId: "direct-operation",
+			startEntryId: world.selected,
+			endEntryId: world.selected,
+		};
+		const prepared: PreparedRangeCompression = await prepareRangeCompression(world.ctx, target);
+		expect(Object.isFrozen(prepared)).toBe(true);
+		expect(Object.isFrozen(prepared.plan)).toBe(true);
+		expect(Object.isFrozen(prepared.plan.selectedEntryIds)).toBe(true);
+		const reviewed = await reviewRangeCompression(world.ctx, prepared);
+		expect(reviewed).toBeDefined();
+		const details = await applyPreparedRangeCompression(world.pi, world.ctx, reviewed!);
+		expect(details).toMatchObject({ operationId: "direct-operation", anchorId: world.anchor });
+		const types = world.session.manager
+			.getBranch()
+			.filter((entry) => "customType" in entry)
+			.map((entry) => (entry as { customType: string }).customType);
+		expect(types.slice(-2)).toEqual([CTREE_RANGE_TAIL, CTREE_RANGE_COMPACT]);
+	});
+
+	it("orchestrates explicit no-review compression", async () => {
+		const world = directWorld();
+		const input: RangeCompressionInput = {
+			operationId: "automated-operation",
+			startEntryId: world.selected,
+			endEntryId: world.selected,
+			review: false,
+		};
+		const outcome: RangeCompressionOutcome = await compressRange(world.pi, world.ctx, input);
+		expect(outcome.status).toBe("applied");
+		if (outcome.status === "applied") expect(outcome.details.operationId).toBe("automated-operation");
 	});
 });
 
