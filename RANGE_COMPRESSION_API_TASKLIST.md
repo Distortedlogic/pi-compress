@@ -59,18 +59,18 @@
 
 ## Work unit 4 — Build the active-range selector projection
 
-- [ ] Build selector input from `ctx.sessionManager.buildContextEntries()`.
-- [ ] Index labels and entry data from `ctx.sessionManager.getTree()`.
-- [ ] Build a temporary linear `SessionTreeNode[]` projection in active-context order.
-- [ ] Do not call `branch()`, `navigateTree()`, `appendEntry()`, or `sendMessage()` while either selector is open.
-- [ ] For the first selector, include one node for each legal range start and use its atomic candidate `startEntryId`.
-- [ ] After start selection, find its candidate index.
-- [ ] For the second selector, include one node for each legal end from the selected start through the candidate before the first protected boundary.
-- [ ] Use each end candidate's `endEntryId` in the second selector.
-- [ ] Exclude inactive branches, pre-compaction entries outside active context, protected entries, and entries that cannot produce a valid endpoint.
-- [ ] Use Pi's `TreeSelectorComponent` to render both projections.
-- [ ] Preserve native labels in the temporary nodes.
-- [ ] Rebuild and validate the `RewritePlan` after the second selection.
+- [x] Build selector input from `ctx.sessionManager.buildContextEntries()`.
+- [x] Index labels and entry data from `ctx.sessionManager.getTree()`.
+- [x] Build a temporary linear `SessionTreeNode[]` projection in active-context order.
+- [x] Do not call `branch()`, `navigateTree()`, `appendEntry()`, or `sendMessage()` while either selector is open.
+- [x] For the first selector, include one node for each legal range start and use its atomic candidate `startEntryId`.
+- [x] After start selection, find its candidate index.
+- [x] For the second selector, include one node for each legal end from the selected start through the candidate before the first protected boundary.
+- [x] Use each end candidate's `endEntryId` in the second selector.
+- [x] Exclude inactive branches, pre-compaction entries outside active context, protected entries, and entries that cannot produce a valid endpoint.
+- [x] Use Pi's `TreeSelectorComponent` to render both projections.
+- [x] Preserve native labels in the temporary nodes.
+- [x] Rebuild and validate the `RewritePlan` after the second selection.
 
 **Completion gate:** Every node shown by either selector is valid for that phase, and the selectors never show inactive branches.
 
