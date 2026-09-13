@@ -325,7 +325,11 @@ describe("extension registration and policy", () => {
 	it("keeps package entry points on the root source files", () => {
 		const packagePath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
 		const manifest = JSON.parse(readFileSync(packagePath, "utf8"));
-		expect(manifest.exports).toEqual({ ".": "./src/index.ts", "./protocol": "./src/protocol.ts" });
+		expect(manifest.exports).toEqual({
+			".": "./src/index.ts",
+			"./protocol": "./src/protocol.ts",
+			"./range-compression": "./src/range-compression.ts",
+		});
 		expect(manifest.pi.extensions).toEqual(["./src/index.ts"]);
 	});
 });

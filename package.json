@@ -10,7 +10,8 @@
 	},
 	"exports": {
 		".": "./src/index.ts",
-		"./protocol": "./src/protocol.ts"
+		"./protocol": "./src/protocol.ts",
+		"./range-compression": "./src/range-compression.ts"
 	},
 	"pi": {
 		"extensions": ["./src/index.ts"]

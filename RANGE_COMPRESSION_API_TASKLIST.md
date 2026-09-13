@@ -152,17 +152,17 @@
 
 ## Work unit 9 — Publish and document the capability
 
-- [ ] Add `"./range-compression": "./src/range-compression.ts"` to `package.json` exports.
-- [ ] Keep `".": "./src/index.ts"` and `"./protocol": "./src/protocol.ts"` unchanged.
-- [ ] Confirm that the `files` list packages `src/range-compression.ts` and excludes root tests.
-- [ ] Update `README.md` with the manual `/compress` sequence and append-only recovery behavior.
-- [ ] Add a direct API example that imports `compressRange` from `pi-context-compress/range-compression` and passes `review: false`.
-- [ ] Update `PROTOCOL.md` with the generic request and result channels.
-- [ ] Add an event-bus example that subscribes to the result channel before it emits `{ request, context: ctx }`.
-- [ ] State that event transport is in-process and that tree mutation requires a command context.
-- [ ] State that normal event handlers must queue or invoke their own command before they can supply a command context.
-- [ ] Document operation idempotency, cancellation, protected boundaries, final revalidation, and error codes.
-- [ ] State that Pi's native `ctx.compact()` remains whole-context compaction and is not used for selected-range compression.
+- [x] Add `"./range-compression": "./src/range-compression.ts"` to `package.json` exports.
+- [x] Keep `".": "./src/index.ts"` and `"./protocol": "./src/protocol.ts"` unchanged.
+- [x] Confirm that the `files` list packages `src/range-compression.ts` and excludes root tests.
+- [x] Update `README.md` with the manual `/compress` sequence and append-only recovery behavior.
+- [x] Add a direct API example that imports `compressRange` from `pi-context-compress/range-compression` and passes `review: false`.
+- [x] Update `PROTOCOL.md` with the generic request and result channels.
+- [x] Add an event-bus example that subscribes to the result channel before it emits `{ request, context: ctx }`.
+- [x] State that event transport is in-process and that tree mutation requires a command context.
+- [x] State that normal event handlers must queue or invoke their own command before they can supply a command context.
+- [x] Document operation idempotency, cancellation, protected boundaries, final revalidation, and error codes.
+- [x] State that Pi's native `ctx.compact()` remains whole-context compaction and is not used for selected-range compression.
 
 **Completion gate:** Package users can find and use both supported integration paths without reading source code.
 
