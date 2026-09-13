@@ -209,22 +209,22 @@ src/
 
 **Depends on:** WU-05
 
-- [ ] Merge crop planning, crop command handling, range planning, and range command handling into `src/compression.ts`.
-- [ ] Use `yargs-parser` for crop flags and repeated `--keep` values.
-- [ ] Use `minimatch` for tool and primary-argument keep patterns; delete the custom glob-to-regex function.
-- [ ] Preserve latest-result double marking, automatic selection, whole-turn removal, top selection, dry run, and headless apply.
-- [ ] Preserve full selected source for summary generation; do not add per-entry truncation to selected-range compression.
-- [ ] Preserve stale-leaf, changed-ID, and changed-hash rejection.
-- [ ] Move batch coordination to `src/batch.ts` and reuse the shared rewrite engine.
-- [ ] Do not keep a session-context map in the batch service. Validate the fresh command context supplied for each in-process request.
-- [ ] Preserve prepare, apply, cancel, status, busy, conflict, missing, failed, and idempotent replay results.
-- [ ] Preserve queued-task-before-summary-before-marker order.
-- [ ] Keep prepared state as plain request, plan, and summary data only.
+- [x] Merge crop planning, crop command handling, range planning, and range command handling into `src/compression.ts`.
+- [x] Use `yargs-parser` for crop flags and repeated `--keep` values.
+- [x] Use `minimatch` for tool and primary-argument keep patterns; delete the custom glob-to-regex function.
+- [x] Preserve latest-result double marking, automatic selection, whole-turn removal, top selection, dry run, and headless apply.
+- [x] Preserve full selected source for summary generation; do not add per-entry truncation to selected-range compression.
+- [x] Preserve stale-leaf, changed-ID, and changed-hash rejection.
+- [x] Move batch coordination to `src/batch.ts` and reuse the shared rewrite engine.
+- [x] Do not keep a session-context map in the batch service. Validate the fresh command context supplied for each in-process request.
+- [x] Preserve prepare, apply, cancel, status, busy, conflict, missing, failed, and idempotent replay results.
+- [x] Preserve queued-task-before-summary-before-marker order.
+- [x] Keep prepared state as plain request, plan, and summary data only.
 
 **Gate**
 
-- [ ] All three compression paths use one range safety implementation.
-- [ ] RPC and event-bus batch behavior match the baseline.
+- [x] All three compression paths use one range safety implementation.
+- [x] RPC and event-bus batch behavior match the baseline.
 
 ### WU-08 — Replace hand-built TUI plumbing with Pi components
 

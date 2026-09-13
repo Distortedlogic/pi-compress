@@ -8,6 +8,16 @@
 import type { SessionTreeNode } from "@earendil-works/pi-coding-agent";
 import { type ForkInfo, type ForkPresentation, decisionsOnPath, nearestOpenFork } from "../../branches.ts";
 import {
+	type ContextTurn,
+	type CropCandidate,
+	type CropPlan,
+	autoSelect,
+	contextTurns,
+	cropCandidates,
+	planCrop,
+	planRemoveTurns,
+} from "../../compression.ts";
+import {
 	CTREE_CROP,
 	CTREE_CROP_TAIL,
 	CTREE_DECISION,
@@ -21,16 +31,6 @@ import {
 } from "../../protocol.ts";
 import type { SessionSnapshot } from "../../session.ts";
 import { aggregateConsumers } from "../consumers.ts";
-import {
-	type ContextTurn,
-	type CropCandidate,
-	type CropPlan,
-	autoSelect,
-	contextTurns,
-	cropCandidates,
-	planCrop,
-	planRemoveTurns,
-} from "../crop.ts";
 import { type Band, band, estimateContextTokens, estimateEntryTokens, fmtTokens } from "../estimate.ts";
 import { serializeEntry, textOfContent } from "../serialize.ts";
 import type { SessionEntry, UserContent } from "../types.ts";

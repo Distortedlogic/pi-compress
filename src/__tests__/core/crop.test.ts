@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { autoSelect, cropCandidates, planCrop, renderReconstruction, stubLine } from "../../core/crop.ts";
 import {
+	autoSelect,
 	candidateByEntryId,
+	cropCandidates,
+	planCrop,
 	prepareRewrite,
 	rangeCandidates,
 	renderRangeTail,
+	renderReconstruction,
 	resolveRangeEndpoint,
 	sourceSha8,
-} from "../../core/range-compress.ts";
+	stubLine,
+} from "../../compression.ts";
 import { snapshotEntry, snapshotSession } from "../../session.ts";
 import { PiSessionFixture, filler } from "../session-fixture.ts";
 

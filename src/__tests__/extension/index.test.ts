@@ -2,10 +2,9 @@ import { randomUUID } from "node:crypto";
 import { type ExtensionAPI, type ExtensionCommandContext, createEventBus } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
+import { registerBatchCompression } from "../../batch.ts";
 import { undoHandler } from "../../branches.ts";
-import { prepareRewrite } from "../../core/index.ts";
-import { registerBatchCompression } from "../../extension/batch-service.ts";
-import { applyRangeCompressionPlan } from "../../extension/range-compress.ts";
+import { applyRangeCompressionPlan, prepareRewrite } from "../../compression.ts";
 import piContextTree from "../../index.ts";
 import {
 	COMPRESSION_ENTRY,

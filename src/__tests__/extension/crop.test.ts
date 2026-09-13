@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { type CropPlan, cropCandidates, planCrop, planRemoveTurns, prepareRewrite } from "../../core/index.ts";
-import { applyCropPlan, cropHandler, parseCropFlags } from "../../extension/crop-cmd.ts";
-import { rangeCompressHandler, runBlockingRangeCompression } from "../../extension/range-compress.ts";
+import {
+	type CropPlan,
+	applyCropPlan,
+	cropCandidates,
+	cropHandler,
+	parseCropFlags,
+	planCrop,
+	planRemoveTurns,
+	prepareRewrite,
+	rangeCompressHandler,
+	runBlockingRangeCompression,
+} from "../../compression.ts";
 import { snapshotSession } from "../../session.ts";
 import { type FakeWorld, entriesByType, makeFake } from "./fake-pi.ts";
 

@@ -106,7 +106,7 @@ export async function executePanelAction(
 			return;
 		}
 		case "crop-apply": {
-			const { applyCropPlan, cropHandler } = await import("./crop-cmd.ts");
+			const { applyCropPlan, cropHandler } = await import("../compression.ts");
 			if (action.dryRun) {
 				ctx.ui.notify(`(dry-run) would crop ${action.plan.stubs.length} — nothing written`, "info");
 				return;

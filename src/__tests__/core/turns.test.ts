@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contextTurns, planRemoveTurns, renderReconstruction } from "../../core/crop.ts";
+import { contextTurns, planRemoveTurns, renderReconstruction } from "../../compression.ts";
 import { snapshotEntry, snapshotSession } from "../../session.ts";
 import { PiSessionFixture, filler } from "../session-fixture.ts";
 

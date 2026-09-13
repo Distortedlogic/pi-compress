@@ -77,7 +77,7 @@ describe("/merge and /crop flag completions carry a label", () => {
 	it("every flag suggestion has both value and label", async () => {
 		const { pi, completions } = makeFake();
 		const { registerMerge } = await import("../../branches.ts");
-		const { registerCrop } = await import("../../extension/crop-cmd.ts");
+		const { registerCrop } = await import("../../compression.ts");
 		registerMerge(pi, { draft: async () => "" });
 		registerCrop(pi);
 
