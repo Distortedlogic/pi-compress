@@ -15,7 +15,6 @@ import {
 	cropCandidates,
 	planCrop,
 	planRemoveTurns,
-	rangeCompressHandler,
 	renderReconstruction,
 } from "../src/compression.ts";
 import { aggregateConsumers } from "../src/core/consumers.ts";
@@ -52,6 +51,7 @@ import {
 	applyPreparedRangeCompression,
 	compressRange,
 	prepareRangeCompression,
+	rangeCompressHandler,
 	renderRangeTail,
 	reviewRangeCompression,
 } from "../src/range-compression.ts";
@@ -379,7 +379,7 @@ describe("shared range safety", () => {
 				component.handleInput?.("\r");
 			});
 		const before = session.manager.getEntries().length;
-		await rangeCompressHandler(mutationApi(session.manager), ctx, "", { draft: async () => "summary" });
+		await rangeCompressHandler(mutationApi(session.manager), ctx, "");
 		expect(selections).toBe(2);
 		expect(session.manager.getEntries()).toHaveLength(before);
 	});

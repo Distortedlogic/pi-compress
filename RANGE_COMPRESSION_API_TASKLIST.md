@@ -99,19 +99,19 @@
 
 ## Work unit 6 — Rebuild the manual `/compress` flow on the shared API
 
-- [ ] Move `registerRangeCompress` and the manual range UI from `src/compression.ts` to `src/range-compression.ts`.
-- [ ] Require TUI mode before opening the range selectors.
-- [ ] Select the start and end through the filtered native projections from work unit 4.
-- [ ] Show one confirmation with the normalized start, normalized end, entry count, estimated source tokens, and current summary model.
-- [ ] Generate the operation UUID before drafting.
-- [ ] Use Pi's `BorderedLoader` only while `prepareRangeCompression` drafts the summary.
-- [ ] Pass the loader signal to `prepareRangeCompression` and close the loader when preparation settles.
-- [ ] Call `reviewRangeCompression` after the loader closes.
-- [ ] Keep this editor review mandatory for `/compress`.
-- [ ] Call `applyPreparedRangeCompression` only after the editor returns non-empty approved text.
-- [ ] Do not copy logic from the public phase functions into the command handler.
-- [ ] Refresh the ambient context display after success.
-- [ ] Report cancellation without writing a tail or marker.
+- [x] Move `registerRangeCompress` and the manual range UI from `src/compression.ts` to `src/range-compression.ts`.
+- [x] Require TUI mode before opening the range selectors.
+- [x] Select the start and end through the filtered native projections from work unit 4.
+- [x] Show one confirmation with the normalized start, normalized end, entry count, estimated source tokens, and current summary model.
+- [x] Generate the operation UUID before drafting.
+- [x] Use Pi's `BorderedLoader` only while `prepareRangeCompression` drafts the summary.
+- [x] Pass the loader signal to `prepareRangeCompression` and close the loader when preparation settles.
+- [x] Call `reviewRangeCompression` after the loader closes.
+- [x] Keep this editor review mandatory for `/compress`.
+- [x] Call `applyPreparedRangeCompression` only after the editor returns non-empty approved text.
+- [x] Do not copy logic from the public phase functions into the command handler.
+- [x] Refresh the ambient context display after success.
+- [x] Report cancellation without writing a tail or marker.
 
 **Completion gate:** `/compress` shows only legal active-path choices, reviews the summary, and uses the same engine as automated callers.
 

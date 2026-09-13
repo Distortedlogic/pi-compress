@@ -146,7 +146,7 @@ function branchEntries(state: SessionState, forkEntryId: string): SessionEntry[]
 	return state.contextEntries.filter((entry) => afterFork.has(entry.id));
 }
 
-export function modelKey(model: ModelLike | undefined): string | undefined {
+function modelKey(model: ModelLike | undefined): string | undefined {
 	return model ? `${model.provider}/${model.id}` : undefined;
 }
 

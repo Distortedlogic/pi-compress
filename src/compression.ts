@@ -1,33 +1,26 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { contentText } from "@earendil-works/pi-ai";
-import {
-	BorderedLoader,
-	type ExtensionAPI,
-	type ExtensionCommandContext,
-	type SessionEntry,
-	type SessionMessageEntry,
-	type SessionTreeNode,
-	TreeSelectorComponent,
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	SessionEntry,
+	SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
 import { minimatch } from "minimatch";
 import parseArgs from "yargs-parser";
-import { deriveState, modelKey } from "./branches.ts";
+import { deriveState } from "./branches.ts";
 import { estimateEntryTokens, fmtTokens } from "./core/estimate.ts";
 import {
-	type RangeCandidate,
 	type RewritePlan,
 	applyRewrite,
 	candidateByEntryId,
 	prepareRewrite,
 	rangeCandidates,
-	resolveRangeEndpoint,
 } from "./core/range-rewrite.ts";
 import { serializeEntry } from "./core/serialize.ts";
-import { type Deps, draftRangeSummary } from "./extension/draft.ts";
 import { refreshAmbient } from "./panel.ts";
 import { CTREE_CROP, CTREE_CROP_TAIL, type CtreeCropDrop, type CtreeCropStub } from "./protocol.ts";
-import { applyPreparedRangeCompression } from "./range-compression.ts";
-import { type SessionSnapshot, snapshotEntry, snapshotSession } from "./session.ts";
+import { type SessionSnapshot, snapshotEntry } from "./session.ts";
 
 export interface CropCandidate {
 	entryId: string;
@@ -66,15 +59,6 @@ interface CropFlags {
 	minTokens?: number;
 	olderThan?: number;
 	keep: string[];
-}
-
-type RangePhase = "start" | "end";
-type RangeCompressionStage = "Drafting summary" | "Checking selected range" | "Applying compression";
-type RangeCompressionProgress = (stage: RangeCompressionStage) => void;
-
-interface RangeSelectorProjection {
-	tree: SessionTreeNode[];
-	entryIds: string[];
 }
 
 const PRIMARY_ARG_KEYS = ["path", "file_path", "url", "command", "query", "name"];
@@ -461,304 +445,5 @@ export function registerCrop(pi: ExtensionAPI): void {
 			const matches = flags.filter((flag) => flag.startsWith(last));
 			return matches.length ? matches.map((value) => ({ value, label: value })) : null;
 		},
-	});
-}
-
-function indexTreeNodes(tree: readonly SessionTreeNode[]): Map<string, SessionTreeNode> {
-	const byId = new Map<string, SessionTreeNode>();
-	const pending = [...tree];
-	while (pending.length > 0) {
-		const node = pending.pop();
-		if (!node) continue;
-		byId.set(node.entry.id, node);
-		pending.push(...node.children);
-	}
-	return byId;
-}
-
-function buildLinearSelectorProjection(
-	ctx: ExtensionCommandContext,
-	entryIds: readonly string[],
-): RangeSelectorProjection {
-	const activeEntryIds = new Set(ctx.sessionManager.buildContextEntries().map((entry) => entry.id));
-	const treeNodes = indexTreeNodes(ctx.sessionManager.getTree());
-	const sourceNodes = entryIds.flatMap((entryId) => {
-		if (!activeEntryIds.has(entryId)) return [];
-		const node = treeNodes.get(entryId);
-		return node ? [node] : [];
-	});
-	let child: SessionTreeNode | undefined;
-	for (let index = sourceNodes.length - 1; index >= 0; index--) {
-		const source = sourceNodes[index];
-		if (!source) continue;
-		child = {
-			entry: source.entry,
-			children: child ? [child] : [],
-			label: source.label,
-			labelTimestamp: source.labelTimestamp,
-		};
-	}
-	return {
-		tree: child ? [child] : [],
-		entryIds: sourceNodes.map((node) => node.entry.id),
-	};
-}
-
-function buildStartSelectorProjection(
-	ctx: ExtensionCommandContext,
-	candidates: readonly RangeCandidate[],
-): RangeSelectorProjection {
-	const entryIds = candidates.flatMap((candidate) => {
-		if (candidate.protected) return [];
-		const endpoint = resolveRangeEndpoint(candidates, candidate.startEntryId, "start");
-		return endpoint.ok ? [endpoint.entryId] : [];
-	});
-	return buildLinearSelectorProjection(ctx, entryIds);
-}
-
-function buildEndSelectorProjection(
-	ctx: ExtensionCommandContext,
-	candidates: readonly RangeCandidate[],
-	startCandidateIndex: number,
-): RangeSelectorProjection {
-	const entryIds: string[] = [];
-	for (let index = startCandidateIndex; index < candidates.length; index++) {
-		const candidate = candidates[index];
-		if (!candidate || candidate.protected) break;
-		const endpoint = resolveRangeEndpoint(candidates, candidate.endEntryId, "end");
-		if (!endpoint.ok) break;
-		entryIds.push(endpoint.entryId);
-	}
-	return buildLinearSelectorProjection(ctx, entryIds);
-}
-
-async function selectNativeEntry(
-	ctx: ExtensionCommandContext,
-	phase: RangePhase,
-	projection: RangeSelectorProjection,
-	initialSelectedId: string,
-): Promise<string | undefined> {
-	ctx.ui.notify(
-		phase === "start" ? "Select the first entry of the range" : "Select the last entry of the range",
-		"info",
-	);
-	if (ctx.mode !== "tui") {
-		ctx.ui.notify("The native tree selector is not available in this mode.", "warning");
-		return undefined;
-	}
-	return ctx.ui.custom<string | undefined>(
-		(
-			tui: { terminal: { rows: number } },
-			_theme: unknown,
-			_keybindings: unknown,
-			done: (entryId: string | undefined) => void,
-		) =>
-			new TreeSelectorComponent(
-				projection.tree,
-				projection.entryIds.at(-1) ?? null,
-				tui.terminal.rows,
-				(entryId) => done(entryId),
-				() => done(undefined),
-				undefined,
-				initialSelectedId,
-				"default",
-			),
-	);
-}
-
-async function applyRangeCompressionPlan(
-	pi: ExtensionAPI,
-	ctx: ExtensionCommandContext,
-	initialPlan: RewritePlan,
-	operationId: string,
-	summaryModel: string,
-	instructions: string | undefined,
-	deps: Deps,
-	progress?: RangeCompressionProgress,
-	signal?: AbortSignal,
-): Promise<boolean> {
-	progress?.("Drafting summary");
-	if (!progress) ctx.ui.notify(`drafting range summary with ${summaryModel}…`, "info");
-	let generatedSummary: string;
-	try {
-		generatedSummary = (await draftRangeSummary(deps.draft, ctx, initialPlan.source, instructions, signal)).trim();
-		if (!generatedSummary) throw new Error("model returned an empty range summary");
-	} catch (error) {
-		ctx.ui.notify(`range summary failed: ${(error as Error).message} (nothing written)`, "error");
-		return false;
-	}
-
-	progress?.("Checking selected range");
-	progress?.("Applying compression");
-	try {
-		const details = await applyPreparedRangeCompression(pi, ctx, {
-			plan: initialPlan,
-			summary: generatedSummary,
-			summaryModel,
-			operationId,
-		});
-		if (!details) {
-			ctx.ui.notify("range compression cancelled during navigation — nothing written", "warning");
-			return false;
-		}
-		refreshAmbient(pi, ctx);
-		ctx.ui.notify(
-			`compressed range: selected ~${fmtTokens(initialPlan.selectedEstTokens)} · summary ~${fmtTokens(details.summaryEstTokens)} · reclaimed ~${fmtTokens(details.reclaimedEstTokens)} tokens · originals kept at ${initialPlan.sourceLeafId}`,
-			"info",
-		);
-		return true;
-	} catch (error) {
-		ctx.ui.notify(`selected range is no longer valid: ${(error as Error).message} (nothing written)`, "warning");
-		return false;
-	}
-}
-
-async function runBlockingRangeCompression(
-	pi: ExtensionAPI,
-	ctx: ExtensionCommandContext,
-	plan: RewritePlan,
-	operationId: string,
-	instructions: string | undefined,
-	deps: Deps,
-): Promise<boolean> {
-	if (ctx.sessionManager.getLeafId() !== plan.sourceLeafId) {
-		ctx.ui.notify("session changed while the range selector was open — re-run /compress (nothing written)", "warning");
-		return false;
-	}
-	const summaryModel = modelKey(ctx.model);
-	if (!summaryModel) {
-		ctx.ui.notify("no current model is available for the range summary — nothing written", "error");
-		return false;
-	}
-	if (ctx.mode !== "tui") {
-		return applyRangeCompressionPlan(pi, ctx, plan, operationId, summaryModel, instructions, deps);
-	}
-	const result = await ctx.ui.custom<boolean>(
-		(tui, theme, _keybindings, done) => {
-			const rangeDetails = `summary model ${summaryModel} · ${plan.selectedEntryIds.length} selected entries · ~${fmtTokens(plan.selectedEstTokens)} source tokens`;
-			const loader = new BorderedLoader(tui, theme, `Preparing compression · ${rangeDetails}`);
-			let finished = false;
-			const finish = (success: boolean): void => {
-				if (finished) return;
-				finished = true;
-				done(success);
-			};
-			loader.onAbort = () => finish(false);
-			void Promise.resolve()
-				.then(() =>
-					applyRangeCompressionPlan(
-						pi,
-						ctx,
-						plan,
-						operationId,
-						summaryModel,
-						instructions,
-						deps,
-						() => {},
-						loader.signal,
-					),
-				)
-				.then(finish, (error: unknown) => {
-					if (!loader.signal.aborted) {
-						ctx.ui.notify(`range compression failed: ${(error as Error).message} (nothing else written)`, "error");
-					}
-					finish(false);
-				});
-			return loader;
-		},
-		{ overlay: false },
-	);
-	return result ?? false;
-}
-
-export async function rangeCompressHandler(
-	pi: ExtensionAPI,
-	ctx: ExtensionCommandContext,
-	args: string,
-	deps: Deps,
-): Promise<void> {
-	const instructions = args.trim() || undefined;
-	await ctx.waitForIdle();
-	const sourceLeafId = ctx.sessionManager.getLeafId();
-	const state = deriveState(ctx);
-	if (!sourceLeafId || !ctx.sessionManager.getEntry(sourceLeafId)) {
-		ctx.ui.notify("empty session — nothing to compress", "warning");
-		return;
-	}
-	const candidates = rangeCandidates(state);
-	const startProjection = buildStartSelectorProjection(ctx, candidates);
-	const firstInitialId = startProjection.entryIds.at(-1);
-	if (!firstInitialId) {
-		ctx.ui.notify("no legal active-context range starts are available", "warning");
-		return;
-	}
-
-	const firstEntryId = await selectNativeEntry(ctx, "start", startProjection, firstInitialId);
-	if (firstEntryId === undefined) return;
-	if (!startProjection.entryIds.includes(firstEntryId)) {
-		ctx.ui.notify("the selected range start is not available; run /compress again", "warning");
-		return;
-	}
-	if (ctx.sessionManager.getSessionId() !== state.sessionId || ctx.sessionManager.getLeafId() !== sourceLeafId) {
-		ctx.ui.notify("the session changed while the range selector was open; run /compress again", "warning");
-		return;
-	}
-
-	const startCandidateIndex = candidates.findIndex(
-		(candidate) => !candidate.protected && candidate.startEntryId === firstEntryId,
-	);
-	if (startCandidateIndex === -1) {
-		ctx.ui.notify("the selected range start is no longer valid; run /compress again", "warning");
-		return;
-	}
-	const endProjection = buildEndSelectorProjection(ctx, candidates, startCandidateIndex);
-	const secondInitialId = endProjection.entryIds[0];
-	if (!secondInitialId) {
-		ctx.ui.notify("no legal range ends are available after the selected start", "warning");
-		return;
-	}
-
-	const endEntryId = await selectNativeEntry(ctx, "end", endProjection, secondInitialId);
-	if (endEntryId === undefined) return;
-	if (!endProjection.entryIds.includes(endEntryId)) {
-		ctx.ui.notify("the selected range end is not available; run /compress again", "warning");
-		return;
-	}
-
-	let plan: RewritePlan;
-	try {
-		const fresh = snapshotSession(ctx.sessionManager);
-		if (fresh.sessionId !== state.sessionId || fresh.leafId !== sourceLeafId) {
-			throw new Error("the session changed while the range selector was open");
-		}
-		plan = prepareRewrite(fresh, firstEntryId, endEntryId);
-	} catch (error) {
-		ctx.ui.notify(`Invalid range: ${(error as Error).message}. Run /compress again.`, "warning");
-		return;
-	}
-	const startEntry = ctx.sessionManager.getEntry(plan.startEntryId);
-	const endEntry = ctx.sessionManager.getEntry(plan.endEntryId);
-	const startLabel = startEntry
-		? (serializeEntry(startEntry)?.split("\n", 1)[0] ?? startEntry.type)
-		: plan.startEntryId;
-	const endLabel = endEntry ? (serializeEntry(endEntry)?.split("\n", 1)[0] ?? endEntry.type) : plan.endEntryId;
-	const confirmed = await ctx.ui.confirm(
-		"Compress selected range",
-		[
-			`Start: ${startLabel}`,
-			`End: ${endLabel}`,
-			`${plan.selectedEntryIds.length} entries · ~${fmtTokens(plan.selectedEstTokens)} tokens`,
-			"The generated summary will be applied without review.",
-			"Terminal input will pause until compression finishes.",
-		].join("\n"),
-	);
-	if (!confirmed) return;
-	await runBlockingRangeCompression(pi, ctx, plan, randomUUID(), instructions, deps);
-}
-
-export function registerRangeCompress(pi: ExtensionAPI, deps: Deps): void {
-	pi.registerCommand("compress", {
-		description: "pi-context-tree: select, summarize, and replace one active-context range",
-		handler: (args, ctx) => rangeCompressHandler(pi, ctx, args, deps),
 	});
 }
