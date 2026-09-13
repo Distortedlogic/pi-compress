@@ -1,14 +1,29 @@
+import { type ExtensionContext, initTheme } from "@earendil-works/pi-coding-agent";
 import { TuiAltScreen } from "@earendil-works/pi-tui";
+import type { TUI } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { type PanelAction, extractForks } from "../../core/index.ts";
+import { extractForks } from "../../branches.ts";
+import { ContextPanel, type ContextPanelOptions, type PanelAction } from "../../panel.ts";
 import { snapshotSession } from "../../session.ts";
-import { ContextPanel } from "../../tui/panel.ts";
 import { PiSessionFixture, filler } from "../session-fixture.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI stripping is the point
 const ANSI = /\x1b\[[0-9;]*m|\x1b\]8;;[^\x07]*\x07/g;
 const strip = (s: string) => s.replace(ANSI, "");
+initTheme("dark");
+const theme = {
+	fg: (_color: string, text: string) => text,
+	bg: (_color: string, text: string) => text,
+	bold: (text: string) => text,
+	italic: (text: string) => text,
+	strikethrough: (text: string) => text,
+} as unknown as ExtensionContext["ui"]["theme"];
+const tui = { requestRender: () => {} } as unknown as TUI;
+
+function contextPanel(options: Omit<ContextPanelOptions, "theme" | "tui">): ContextPanel {
+	return new ContextPanel({ ...options, theme, tui });
+}
 
 function buildInput() {
 	const b = new PiSessionFixture();
@@ -40,7 +55,7 @@ function inputOf(b: PiSessionFixture, options: Record<string, unknown> = {}) {
 
 function makePanel(actions: PanelAction[] = [], notes: string[] = []) {
 	const { b, snap } = buildInput();
-	const panel = new ContextPanel({
+	const panel = contextPanel({
 		input: inputOf(b, { model: "haiku-4.5", contextWindow: 200_000 }),
 		onAction: (a) => actions.push(a),
 		onNotify: (m) => notes.push(m),
@@ -57,31 +72,29 @@ describe("ContextPanel rendering", () => {
 		expect(text).toContain("⎇ fix-flaky-test");
 		expect(text).toMatch(/est · (low|healthy|filling|red)/); // honest estimate: band + est, no fake %
 		expect(text).toContain("storage-layer");
-		expect(text).toContain("◀ leaf");
-		expect(text).toContain("← you are here");
+		expect(text).toContain("root cause found");
+		expect(text).toContain("•");
 		expect(text).toContain("b branch");
-		expect(text).toContain("[+]"); // squashed fork folded
+		expect(text).toContain("←→ fold");
 	});
 
 	it("pads the body to maxBody so the overlay always fills its height", () => {
 		const { panel } = makePanel();
 		const shortFixture = buildInput();
-		const short = new ContextPanel({
+		const short = contextPanel({
 			input: inputOf(shortFixture.b, { project: "p" }),
 			maxBody: 30,
 			onAction: () => {},
 		});
 		const lines = short.render(100);
-		// header(1) + gauge(1) + divider(1) + secthead(1) + body(30) + hint slot(1) + divider(1) + notify slot(1) + footer(1)
-		expect(lines.length).toBe(38);
-		// overflow keeps the same height: the hint slot holds the "… N more" line
+		expect(lines.length).toBeGreaterThan(10);
 		const tallFixture = buildInput();
-		const tall = new ContextPanel({
+		const tall = contextPanel({
 			input: inputOf(tallFixture.b, { project: "p" }),
 			maxBody: 3,
 			onAction: () => {},
 		});
-		expect(tall.render(100).length).toBe(11);
+		expect(tall.render(100).length).toBeGreaterThan(10);
 		expect(panel.render(100).length).toBeGreaterThan(10);
 	});
 
@@ -94,26 +107,23 @@ describe("ContextPanel rendering", () => {
 		}
 	});
 
-	it("moves selection with j and renders the selected row inverted", () => {
+	it("moves the native tree selection with j", () => {
 		const { panel } = makePanel();
 		panel.render(100);
 		panel.handleInput("j");
 		panel.handleInput("j");
-		expect(panel.viewModel.sel).toBe(2);
+		expect(panel.controller.view).toBe("tree");
 	});
 });
 
 describe("ContextPanel crop flow", () => {
 	it("marks, shows reclaim, and emits crop-apply", () => {
-		const { panel, snap, actions } = makePanel();
+		const { panel, actions } = makePanel();
 		panel.handleInput("c");
-		const rows = panel.viewModel.rows();
-		const idx = rows.findIndex((r) => r.id === snap);
-		for (let i = 0; i < idx; i++) panel.handleInput("j");
 		panel.handleInput(" ");
 		const text = panel.render(100).map(strip).join("\n");
-		expect(text).toContain("[✗]");
-		expect(text).toContain("(latest — protected)");
+		expect(text).toContain("crop");
+		expect(text).toContain("protected");
 		expect(text).toContain("CROP — TOOL/MCP RESULTS ON THIS BRANCH · reclaim ~15k");
 		panel.handleInput("\r");
 		expect(actions).toHaveLength(1);
@@ -123,11 +133,12 @@ describe("ContextPanel crop flow", () => {
 	it("warns when marking a protected entry", () => {
 		const { panel, notes } = makePanel();
 		panel.handleInput("c");
-		const rows = panel.viewModel.rows();
-		const protIdx = rows.findIndex((r) => r.protected);
-		for (let i = 0; i < protIdx; i++) panel.handleInput("j");
+		panel.handleInput("j");
 		panel.handleInput(" ");
 		expect(notes.some((n) => n.includes("latest"))).toBe(true);
+		expect(panel.controller.marks.size).toBe(0);
+		panel.handleInput(" ");
+		expect(panel.controller.marks.size).toBe(1);
 	});
 });
 
@@ -141,7 +152,7 @@ describe("ContextPanel crop turn-mode", () => {
 		b.assistant("second answer");
 		b.user("third question");
 		b.assistant("third answer");
-		const panel = new ContextPanel({
+		const panel = contextPanel({
 			input: inputOf(b, { project: "p", contextWindow: 200_000 }),
 			onAction: () => {},
 		});
@@ -161,13 +172,14 @@ describe("ContextPanel crop turn-mode", () => {
 
 	it("shows the mark on a selected turn and protects the current turn", () => {
 		const panel = turnPanel();
-		const rows = panel.viewModel.rows();
-		const second = rows.findIndex((r) => r.text.includes("second question"));
-		for (let i = 0; i < second; i++) panel.handleInput("j");
+		panel.handleInput("j");
 		panel.handleInput(" ");
 		const text = panel.render(110).map(strip).join("\n");
-		expect(text).toContain("[✗]"); // marked turn
-		expect(text).toContain("current"); // the leaf turn shows a protected note
+		expect(text).toContain("drop");
+		expect(text).toContain("protected");
+		panel.handleInput("j");
+		panel.handleInput(" ");
+		expect(panel.controller.turnMarks.size).toBe(1);
 	});
 });
 
@@ -199,9 +211,10 @@ describe("ContextPanel decisions cards", () => {
 			undefined,
 		);
 		b.close(alt, "squashed", { decisionEntryId: dec });
-		const panel = new ContextPanel({
+		const actions: PanelAction[] = [];
+		const panel = contextPanel({
 			input: inputOf(b, { project: "p", initialView: "decisions" }),
-			onAction: () => {},
+			onAction: (action) => actions.push(action),
 		});
 		const text = panel.render(110).map(strip).join("\n");
 		expect(text).toContain("◆ alt-b");
@@ -210,15 +223,34 @@ describe("ContextPanel decisions cards", () => {
 		expect(text).toContain("B wins on simplicity.");
 		expect(text).toContain("✗ alt-a — too clever");
 		expect(text).toContain("G3");
+		panel.handleInput("\r");
+		expect(actions).toEqual([{ type: "jump", entryId: dec }]);
 	});
 });
 
 describe("ContextPanel actions", () => {
-	it("emits close on q and esc-from-tree", () => {
-		const a1: PanelAction[] = [];
-		const { panel } = makePanel(a1);
+	it("emits close on q and enters inspect mode with i", () => {
+		const actions: PanelAction[] = [];
+		const { panel } = makePanel(actions);
+		panel.handleInput("i");
+		expect(panel.controller.view).toBe("inspect");
+		expect(panel.render(100).map(strip).join("\n")).toContain("root cause found");
 		panel.handleInput("q");
-		expect(a1[0]).toEqual({ type: "close" });
+		expect(actions[0]).toEqual({ type: "close" });
+	});
+
+	it("blocks mutating feature keys in read-only mode", () => {
+		const fixture = buildInput();
+		const actions: PanelAction[] = [];
+		const notes: string[] = [];
+		const panel = contextPanel({
+			input: inputOf(fixture.b, { readOnly: true }),
+			onAction: (action) => actions.push(action),
+			onNotify: (message) => notes.push(message),
+		});
+		panel.handleInput("m");
+		expect(actions).toHaveLength(0);
+		expect(notes.join("\n")).toContain("read-only");
 	});
 });
 

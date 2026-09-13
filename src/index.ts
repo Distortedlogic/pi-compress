@@ -9,11 +9,10 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerBatchCompression } from "./batch.ts";
-import { registerBranch, registerDecisionRenderer, registerMerge, registerUndo } from "./branches.ts";
+import { registerBranch, registerMerge, registerUndo } from "./branches.ts";
 import { registerCrop, registerRangeCompress } from "./compression.ts";
-import { registerAmbient } from "./extension/ambient.ts";
 import { type Deps, realDraft } from "./extension/draft.ts";
-import { registerPanel } from "./extension/panel-cmd.ts";
+import { registerAmbient, registerDecisionRenderer, registerPanel } from "./panel.ts";
 
 export default function piContextCompress(api: ExtensionAPI): void {
 	const deps: Deps = { draft: realDraft };

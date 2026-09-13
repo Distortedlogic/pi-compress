@@ -9,19 +9,17 @@ import type {
 	ExtensionContext,
 	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
 import parseArgs from "yargs-parser";
 import { serializeEntries, textOfContent } from "./core/serialize.ts";
 import { isCustomMessageEntry } from "./core/types.ts";
-import { refreshAmbient } from "./extension/ambient.ts";
 import { DRAFT_SYSTEM_PROMPT, type Deps, draftUserPrompt } from "./extension/draft.ts";
+import { refreshAmbient } from "./panel.ts";
 import {
 	CTREE_CLOSE,
 	CTREE_DECISION,
 	CTREE_FORK,
 	type CtreeCloseData,
 	type CtreeCloseStatus,
-	type CtreeDecisionDetails,
 	type CtreeForkData,
 	compressionDetails,
 	ctreeCloseData,
@@ -29,7 +27,6 @@ import {
 	ctreeDecisionDetails,
 	ctreeForkData,
 	ctreeRangeCompactData,
-	parseCtreeDecisionDetails,
 } from "./protocol.ts";
 import { type SessionSnapshot, snapshotSession } from "./session.ts";
 
@@ -606,31 +603,6 @@ export async function undoHandler(pi: ExtensionAPI, ctx: ExtensionCommandContext
 	}
 	refreshAmbient(pi, ctx);
 	ctx.ui.notify(`↩ undone — ${step.describe}`, "info");
-}
-
-export function registerDecisionRenderer(pi: ExtensionAPI): void {
-	pi.registerMessageRenderer<CtreeDecisionDetails>(CTREE_DECISION, (message, options, theme) => {
-		const details = parseCtreeDecisionDetails(message.details);
-		const content = textOfContent(message.content);
-		const body = content.split("\n");
-		const lines = [
-			`${theme.fg("accent", "◆")} ${theme.fg("accent", details?.branchName ?? "decision")} ${theme.fg("dim", "— decision record (squash-merged branch)")}`,
-			theme.fg(
-				"dim",
-				`  ${message.timestamp ? new Date(message.timestamp).toISOString().slice(0, 10) : ""}${message.timestamp ? " · " : ""}human-confirmed ✓`,
-			),
-		];
-		if (options.expanded) {
-			lines.push(...body.map((line) => `  ${line}`));
-		} else {
-			lines.push(`  ${body.find((line) => line.startsWith("**Outcome:**")) ?? body[0] ?? ""}`);
-			lines.push(theme.fg("dim", "  (expand to see the full record)"));
-		}
-		for (const sibling of details?.siblings ?? []) {
-			lines.push(`  ${theme.fg("error", `✗ ${sibling.name} — ${sibling.reason}`)}`);
-		}
-		return new Text(lines.join("\n"), 0, 0);
-	});
 }
 
 export function registerBranch(pi: ExtensionAPI): void {

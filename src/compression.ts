@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import {
+	BorderedLoader,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	TreeSelectorComponent,
 } from "@earendil-works/pi-coding-agent";
-import { Loader } from "@earendil-works/pi-tui";
 import { minimatch } from "minimatch";
 import parseArgs from "yargs-parser";
 import { deriveState, modelKey } from "./branches.ts";
@@ -12,9 +12,8 @@ import { estimateEntryTokens, estimateTextTokens, fmtTokens } from "./core/estim
 import { serializeEntries, serializeEntry, textOfContent } from "./core/serialize.ts";
 import type { AgentMessage, MessageEntry, SessionEntry } from "./core/types.ts";
 import { isCustomMessageEntry, isMessageEntry } from "./core/types.ts";
-import { refreshAmbient } from "./extension/ambient.ts";
 import { type Deps, draftRangeSummary } from "./extension/draft.ts";
-import { openPanel } from "./extension/panel-cmd.ts";
+import { refreshAmbient } from "./panel.ts";
 import {
 	CTREE_CROP,
 	CTREE_CROP_TAIL,
@@ -744,6 +743,7 @@ export async function cropHandler(pi: ExtensionAPI, ctx: ExtensionCommandContext
 	if (flags.auto && premark.length === 0) {
 		ctx.ui.notify("--auto matched nothing (protected/latest results are skipped) — opening review anyway", "info");
 	}
+	const { openPanel } = await import("./panel.ts");
 	const action = await openPanel(pi, ctx, { initialView: "crop", premark, dryRun: flags.dryRun });
 	if (!action || action.type !== "crop-apply") return;
 	if (action.dryRun) return notifyDryRun(ctx, action.plan);
@@ -835,12 +835,13 @@ export async function applyRangeCompressionPlan(
 	instructions: string | undefined,
 	deps: Deps,
 	progress?: RangeCompressionProgress,
+	signal?: AbortSignal,
 ): Promise<boolean> {
 	progress?.("Drafting summary");
 	if (!progress) ctx.ui.notify(`drafting range summary with ${summaryModel}…`, "info");
 	let generatedSummary: string;
 	try {
-		generatedSummary = (await draftRangeSummary(deps.draft, ctx, initialPlan.source, instructions)).trim();
+		generatedSummary = (await draftRangeSummary(deps.draft, ctx, initialPlan.source, instructions, signal)).trim();
 		if (!generatedSummary) throw new Error("model returned an empty range summary");
 	} catch (error) {
 		ctx.ui.notify(`range summary failed: ${(error as Error).message} (nothing written)`, "error");
@@ -892,34 +893,21 @@ export async function runBlockingRangeCompression(
 	const result = await ctx.ui.custom<boolean>(
 		(tui, theme, _keybindings, done) => {
 			const rangeDetails = `summary model ${summaryModel} · ${plan.selectedEntryIds.length} selected entries · ~${fmtTokens(plan.selectedEstTokens)} source tokens`;
-			const loader = Object.assign(
-				new Loader(
-					tui,
-					(text) => theme.fg("accent", text),
-					(text) => theme.fg("muted", text),
-					`Preparing compression · ${rangeDetails}`,
-				),
-				{ focused: true, handleInput: (_data: string): void => {} },
-			);
+			const loader = new BorderedLoader(tui, theme, `Preparing compression · ${rangeDetails}`);
+			let finished = false;
 			const finish = (success: boolean): void => {
-				try {
-					loader.stop();
-				} finally {
-					done(success);
-				}
+				if (finished) return;
+				finished = true;
+				done(success);
 			};
+			loader.onAbort = () => finish(false);
 			void Promise.resolve()
-				.then(() =>
-					applyRangeCompressionPlan(pi, ctx, plan, summaryModel, instructions, deps, (stage) => {
-						loader.setMessage(`${stage} · ${rangeDetails}`);
-					}),
-				)
+				.then(() => applyRangeCompressionPlan(pi, ctx, plan, summaryModel, instructions, deps, () => {}, loader.signal))
 				.then(finish, (error: unknown) => {
-					try {
+					if (!loader.signal.aborted) {
 						ctx.ui.notify(`range compression failed: ${(error as Error).message} (nothing else written)`, "error");
-					} finally {
-						finish(false);
 					}
+					finish(false);
 				});
 			return loader;
 		},

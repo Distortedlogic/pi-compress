@@ -1,12 +1,15 @@
 import type { Model } from "@earendil-works/pi-ai";
-import type {
-	ExtensionAPI,
-	ExtensionCommandContext,
-	ExtensionContext,
-	ExtensionUIContext,
-	SessionEntry,
+import {
+	type ExtensionAPI,
+	type ExtensionCommandContext,
+	type ExtensionContext,
+	type ExtensionUIContext,
+	type SessionEntry,
+	SessionManager,
+	initTheme,
 } from "@earendil-works/pi-coding-agent";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+
+initTheme("dark");
 
 export type ModelLike = Model<any>;
 export type UiLike = ExtensionUIContext;
@@ -101,6 +104,13 @@ export class FakeSession {
 }
 
 export class FakeUi {
+	readonly theme = {
+		fg: (_color: string, text: string) => text,
+		bg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+		italic: (text: string) => text,
+		strikethrough: (text: string) => text,
+	};
 	notifications: { msg: string; type?: string }[] = [];
 	selectQueue: (string | undefined)[] = [];
 	editorQueue: (string | undefined)[] = [];

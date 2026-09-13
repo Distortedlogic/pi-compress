@@ -1,6 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, it } from "vitest";
-import { refreshAmbient, registerAmbient, resetAmbient } from "../../extension/ambient.ts";
+import { refreshAmbient, registerAmbient, resetAmbient } from "../../panel.ts";
 import { makeFake } from "./fake-pi.ts";
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping ANSI is the point

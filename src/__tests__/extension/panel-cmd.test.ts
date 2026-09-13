@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { openPanel, registerPanel } from "../../extension/panel-cmd.ts";
+import { openPanel, registerPanel } from "../../panel.ts";
 import { makeFake } from "./fake-pi.ts";
 
 interface CapturedMount {

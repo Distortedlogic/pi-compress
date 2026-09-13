@@ -9,6 +9,7 @@ export type DraftFn = (
 	modelRef: string | undefined,
 	system: string,
 	user: string,
+	signal?: AbortSignal,
 ) => Promise<string>;
 
 export interface Deps {
@@ -36,13 +37,17 @@ export const RANGE_COMPRESSION_SYSTEM_PROMPT = [
 	"Do not invent results or remove uncertainty. State unknown or unverified facts clearly.",
 ].join("\n");
 
-export const realDraft: DraftFn = async (ctx, modelRef, system, user) => {
+export const realDraft: DraftFn = async (ctx, modelRef, system, user, signal) => {
 	const model: ModelLike | undefined = (modelRef ? resolveModel(ctx, modelRef) : undefined) ?? ctx.model;
 	if (!model) throw new Error("no model available for drafting");
-	const response = await ctx.modelRegistry.complete(model, {
-		systemPrompt: system,
-		messages: [{ role: "user", content: [{ type: "text", text: user }], timestamp: Date.now() }],
-	});
+	const response = await ctx.modelRegistry.complete(
+		model,
+		{
+			systemPrompt: system,
+			messages: [{ role: "user", content: [{ type: "text", text: user }], timestamp: Date.now() }],
+		},
+		{ signal },
+	);
 	const text = (response.content as { type: string; text?: string }[])
 		.filter((b) => b.type === "text")
 		.map((b) => b.text ?? "")
@@ -107,8 +112,9 @@ export async function draftRangeSummary(
 	ctx: ExtensionCommandContext,
 	selectedSerialized: string,
 	instructions?: string,
+	signal?: AbortSignal,
 ): Promise<string> {
 	const userPrompt = rangeCompressionUserPrompt(selectedSerialized, instructions);
 	assertRangeSummaryFits(ctx, userPrompt);
-	return draft(ctx, undefined, RANGE_COMPRESSION_SYSTEM_PROMPT, userPrompt);
+	return draft(ctx, undefined, RANGE_COMPRESSION_SYSTEM_PROMPT, userPrompt, signal);
 }

@@ -230,23 +230,23 @@ src/
 
 **Depends on:** WU-06 and WU-07
 
-- [ ] Merge panel state, rendering, ambient status, gauge, and message rendering into `src/panel.ts`.
-- [ ] Use the theme passed by Pi; delete the custom theme interface and Chalk default theme.
-- [ ] Use `TreeSelectorComponent` for tree and range entry selection.
-- [ ] Use `SettingsList` for crop marks and protected values.
-- [ ] Use `SelectList` for consumer and decision lists.
-- [ ] Use `BorderedLoader` for cancellable summary work.
-- [ ] Use `Text`, `Container`, and `Markdown` for remaining display content.
-- [ ] Keep one small panel controller for view changes, folds, feature keys, and returned actions.
-- [ ] Preserve tree, crop, whole-turn, consumers, decisions, and inspect views.
-- [ ] Preserve width limits, scrolling, read-only mode, notifications, and all current keys.
-- [ ] Keep the small 5%, 15%, and 40% context gauge because these thresholds are extension behavior.
-- [ ] Preserve the red-band warning, compaction warning, trend marker, status, title, and above-editor gauge.
+- [x] Merge panel state, rendering, ambient status, gauge, and message rendering into `src/panel.ts`.
+- [x] Use the theme passed by Pi; delete the custom theme interface and Chalk default theme.
+- [x] Use `TreeSelectorComponent` for tree and range entry selection.
+- [x] Use `SettingsList` for crop marks and protected values.
+- [x] Use `SelectList` for consumer and decision lists.
+- [x] Use `BorderedLoader` for cancellable summary work.
+- [x] Use `Text`, `Container`, and `Markdown` for remaining display content.
+- [x] Keep one small panel controller for view changes, folds, feature keys, and returned actions.
+- [x] Preserve tree, crop, whole-turn, consumers, decisions, and inspect views.
+- [x] Preserve width limits, scrolling, read-only mode, notifications, and all current keys.
+- [x] Keep the small 5%, 15%, and 40% context gauge because these thresholds are extension behavior.
+- [x] Preserve the red-band warning, compaction warning, trend marker, status, title, and above-editor gauge.
 
 **Gate**
 
-- [ ] The panel works in the Pi TUI and remains safe in RPC, print, and no-UI modes.
-- [ ] No custom ANSI theme or custom list navigation remains when Pi supplies it.
+- [x] The panel works in the Pi TUI and remains safe in RPC, print, and no-UI modes.
+- [x] No custom ANSI theme or custom list navigation remains when Pi supplies it.
 
 ### WU-09 — Consolidate the tests
 
