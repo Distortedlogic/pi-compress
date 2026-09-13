@@ -3,5 +3,5 @@ extends:
 files:
   - "package.json"
   - "tsconfig.json"
-  - "packages/{core,extension,tui}/package.json"
-  - "packages/{core,extension,tui}/src/**/*.ts"
+  - "src/**/*.ts"
+  - "!tests/**/*"

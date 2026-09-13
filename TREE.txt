@@ -1,12 +1,4 @@
-/tmp/pi-context-preload-tree-lpjtMQ/paths.txt
-├── fixtures
-├── packages
-│   ├── core
-│   │   └── test
-│   ├── extension
-│   │   └── test
-│   └── tui
-│       └── test
+/tmp/pi-context-preload-tree-DLT6XC/paths.txt
 ├── src
 │   ├── core
 │   │   ├── consumers.ts
@@ -25,8 +17,6 @@
 │   └── session.ts
 ├── biome.json
 ├── .gitignore
-├── LEAN_SRC_REFACTOR_TASKLIST.md
 ├── package.json
-├── PROTOCOL.md
 ├── README.md
 └── tsconfig.json
