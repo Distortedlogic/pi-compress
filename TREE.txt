@@ -1,0 +1,60 @@
+/tmp/pi-context-preload-tree-Dwp7sz/paths.txt
+├── fixtures
+│   ├── branched.jsonl
+│   ├── generate.ts
+│   ├── legacy-v1.jsonl
+│   ├── linear.jsonl
+│   ├── tournament.jsonl
+│   └── truncated.jsonl
+├── packages
+│   ├── core
+│   │   ├── src
+│   │   │   ├── vm
+│   │   │   │   └── panel.ts
+│   │   │   ├── consumers.ts
+│   │   │   ├── crop.ts
+│   │   │   ├── ctree.ts
+│   │   │   ├── estimate.ts
+│   │   │   ├── forest.ts
+│   │   │   ├── index.ts
+│   │   │   ├── jsonl.ts
+│   │   │   ├── range-compress.ts
+│   │   │   ├── record.ts
+│   │   │   ├── serialize.ts
+│   │   │   ├── testkit.ts
+│   │   │   ├── tree.ts
+│   │   │   └── types.ts
+│   │   └── test
+│   ├── extension
+│   │   ├── src
+│   │   │   ├── adapter.ts
+│   │   │   ├── ambient.ts
+│   │   │   ├── batch-range.ts
+│   │   │   ├── batch-service.ts
+│   │   │   ├── branch.ts
+│   │   │   ├── crop-cmd.ts
+│   │   │   ├── ctx-cache.ts
+│   │   │   ├── draft.ts
+│   │   │   ├── index.ts
+│   │   │   ├── merge.ts
+│   │   │   ├── panel-cmd.ts
+│   │   │   ├── protocol.ts
+│   │   │   ├── range-compress.ts
+│   │   │   ├── state.ts
+│   │   │   └── undo.ts
+│   │   └── test
+│   └── tui
+│       ├── src
+│       │   ├── decision-card.ts
+│       │   ├── gauge.ts
+│       │   ├── index.ts
+│       │   ├── panel.ts
+│       │   └── theme.ts
+│       └── test
+├── biome.json
+├── .gitignore
+├── LEAN_SRC_REFACTOR_TASKLIST.md
+├── package.json
+├── PROTOCOL.md
+├── README.md
+└── tsconfig.json
