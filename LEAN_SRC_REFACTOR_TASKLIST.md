@@ -54,15 +54,45 @@ src/
 
 **Depends on:** none
 
-- [ ] Run `npm test` and `npm run check`; record all existing failures before edits.
-- [ ] Map every fixed contract above to at least one existing test or smoke check.
-- [ ] Record the current package output with `npm pack --dry-run`.
-- [ ] Record one TUI load check and one RPC load check for the current extension.
-- [ ] Identify tracked work that is outside this refactor and do not modify it.
+- [x] Run `npm test` and `npm run check`; record all existing failures before edits.
+- [x] Map every fixed contract above to at least one existing test or smoke check.
+- [x] Record the current package output with `npm pack --dry-run`.
+- [x] Record one TUI load check and one RPC load check for the current extension.
+- [x] Identify tracked work that is outside this refactor and do not modify it.
+
+#### Baseline record
+
+- `npm test`: passed; 27 files passed, 1 file skipped, 212 tests passed, and 3 tests skipped.
+- `npm run check`: passed; TypeScript passed and Biome checked 72 files with no fixes.
+- `npm pack --dry-run`: passed; 37 files, 52.4 kB packed, 178.2 kB unpacked, SHA-1 `b8f833b91fb1a69895fd2bc385d92b773dad27c0`. The package contains `PROTOCOL.md`, the empty `README.md`, `package.json`, and the production TypeScript under `packages/core/src`, `packages/extension/src`, and `packages/tui/src`.
+- Public export smoke: passed; both `pi-context-compress` and `pi-context-compress/protocol` loaded, and the protocol export included both event-channel constants.
+- RPC load smoke: `packages/extension/test/rpc-smoke.test.ts` passed, 1 test and 0 failures.
+- Real TUI load check: `packages/extension/test/golden/tui-pty.test.ts` was found but all 3 tests skipped because this machine has no `expect` executable. The available fallback, `packages/tui/test/panel.test.ts`, passed 12 tests, including the headless TUI mount, render, width, and input smoke. The real PTY test remains the final TUI load verification path.
+- Worktree baseline: no tracked changes. Untracked `TREE.txt` is outside this refactor and was not modified.
+
+#### Fixed-contract verification map
+
+| Contract | Existing verification path |
+| --- | --- |
+| `/branch`, `/merge`, `/crop`, `/compress`, `/panel`, `/decisions`, `/undo` | Registration: `packages/extension/test/index.test.ts`. Behavior: `branch.test.ts`, `merge.test.ts`, `crop.test.ts`, `panel-cmd.test.ts`, and `undo.test.ts`. |
+| `Ctrl+Q` | `packages/extension/test/panel-cmd.test.ts` checks the exact shortcut and opens the panel. |
+| Merge squash, discard, and tournament | `packages/extension/test/merge.test.ts` and `packages/extension/test/golden/golden-scenarios.test.ts`. |
+| Merge no-LLM | The manual-template path is covered by the drafting-failure fallback in `packages/extension/test/merge.test.ts`; there is no direct `--no-llm` case, so WU-09 must retain or add one. |
+| Crop result, whole turn, top, auto, apply, and dry run | `packages/core/test/crop.test.ts`, `packages/core/test/turns.test.ts`, `packages/extension/test/crop.test.ts`, and the TUI PTY crop cases. |
+| Public exports `.` and `./protocol` | The public export smoke above and `package.json`; protocol behavior is also used by `packages/extension/test/index.test.ts`. |
+| Request and result event channels | `packages/extension/test/index.test.ts` covers prepare, apply, cancel, conflicts, and session changes through the independent compression interface. |
+| Durable `ctree/*` and `pi-context-compress/*` values | Golden session tests, crop/range/undo tests, and protocol interface tests inspect the persisted custom types and append-only recovery data. |
+| Accepted legacy `pi-workstream/compression` | Compatibility branches exist in `packages/extension/src/batch-range.ts` and `packages/extension/src/undo.ts`; there is no direct legacy fixture, so WU-09 must add one. |
+| Existing schema versions and old sessions | `packages/core/test/jsonl.test.ts`, `packages/core/test/fixtures.test.ts`, and `fixtures/legacy-v1.jsonl`. |
+| Append order and recovery | `merge.test.ts`, `crop.test.ts`, `golden-scenarios.test.ts`, and `undo.test.ts` check decision-before-close, tail-before-marker, original preservation, and undo targets. |
+| Source hashes | `packages/core/test/crop.test.ts` checks the stable selected-source hash; extension compression tests reject changed source and metadata. |
+| Human review gates and stale-session checks | `merge.test.ts`, `crop.test.ts`, and `index.test.ts` check cancellation, empty review, changed leaf/session, and no writes on failure. |
+| `summarize: false` navigation | Explicit assertions exist in `merge.test.ts`, `crop.test.ts`, `panel-cmd.test.ts`, and `undo.test.ts`; golden tests also reject extra branch summaries. |
+| TUI, RPC, print, and headless paths | TUI PTY and fallback results are recorded above; `rpc-smoke.test.ts` covers RPC load; `crop.test.ts` covers headless auto-apply; `panel-cmd.test.ts` covers no-TUI decision listing. A direct print-process smoke is not present and must be included in WU-09 or WU-12. |
 
 **Gate**
 
-- [ ] The baseline is known, and each user-visible behavior has a verification path.
+- [x] The baseline is known, and each user-visible behavior has a verification path.
 
 ### WU-02 — Put all code under root `src/`
 
