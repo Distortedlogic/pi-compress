@@ -7,8 +7,8 @@
 import type { AgentMessage, SessionEntry, UserContent } from "./types.ts";
 import { isMessageEntry } from "./types.ts";
 
-export const CHARS_PER_TOKEN = 4;
-export const IMAGE_CHARS = 4800;
+const CHARS_PER_TOKEN = 4;
+const IMAGE_CHARS = 4800;
 
 export function estimateTextTokens(text: string): number {
 	return Math.ceil(text.length / CHARS_PER_TOKEN);
@@ -53,7 +53,7 @@ function messageChars(m: AgentMessage): number {
 }
 
 /** Characters this entry contributes to LLM context (0 for non-context entries). */
-export function entryChars(e: SessionEntry): number {
+function entryChars(e: SessionEntry): number {
 	if (isMessageEntry(e)) return messageChars(e.message);
 	switch (e.type) {
 		case "custom_message":

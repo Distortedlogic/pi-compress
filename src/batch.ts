@@ -141,7 +141,7 @@ export async function applyCompression(
 	return details;
 }
 
-export function compressionOnBranch(
+function compressionOnBranch(
 	ctx: ExtensionContext,
 	runId: string,
 	planId: string,

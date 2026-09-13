@@ -59,7 +59,7 @@ export interface PrepareRewriteOptions {
 	anchorId?: string;
 }
 
-export interface RewriteMessage {
+interface RewriteMessage {
 	customType: string;
 	content: string;
 	display: boolean;
@@ -108,7 +108,7 @@ export interface ContextTurn {
 	estTokens: number;
 }
 
-export interface CropFlags {
+interface CropFlags {
 	auto: boolean;
 	dryRun: boolean;
 	apply: boolean;
@@ -576,11 +576,11 @@ export function planRemoveTurns(snapshot: SessionSnapshot, userIds: string[]): C
 	};
 }
 
-export function stubLine(stub: CtreeCropStub): string {
+function stubLine(stub: CtreeCropStub): string {
 	return `[cropped: ${stub.tool}${stub.arg ? ` ${stub.arg}` : ""}, ~${fmtTokens(stub.estTokens)}, ${stub.sha8}]`;
 }
 
-export function dropLine(drop: CtreeCropDrop): string {
+function dropLine(drop: CtreeCropDrop): string {
 	return `[dropped turn — ${drop.entryIds.length} entries, ~${fmtTokens(drop.estTokens)}, recoverable: ${drop.sha8}]`;
 }
 
@@ -616,7 +616,7 @@ export function renderReconstruction(plan: CropPlan): string {
 	return `${header}\n\n${parts.filter(Boolean).join("\n\n")}\n`;
 }
 
-export function parseCropFlags(args: string): CropFlags {
+function parseCropFlags(args: string): CropFlags {
 	const parsed = parseArgs(args, {
 		array: ["keep"],
 		boolean: ["auto", "dry-run", "apply", "top"],
@@ -772,7 +772,7 @@ function pruneNativeTree(tree: NativeTree, allowedEntryIds: ReadonlySet<string>)
 	return tree.flatMap(pruneNode);
 }
 
-export async function selectNativeEntry(
+async function selectNativeEntry(
 	ctx: ExtensionCommandContext,
 	phase: RangePhase,
 	initialSelectedId: string,
@@ -806,7 +806,7 @@ export async function selectNativeEntry(
 	);
 }
 
-export function buildRangeCompactData(
+function buildRangeCompactData(
 	plan: RewritePlan,
 	approvedSummary: string,
 	summaryModel: string,
@@ -827,7 +827,7 @@ export function buildRangeCompactData(
 	};
 }
 
-export async function applyRangeCompressionPlan(
+async function applyRangeCompressionPlan(
 	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
 	initialPlan: RewritePlan,
@@ -873,7 +873,7 @@ export async function applyRangeCompressionPlan(
 	return true;
 }
 
-export async function runBlockingRangeCompression(
+async function runBlockingRangeCompression(
 	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
 	plan: RewritePlan,

@@ -30,8 +30,8 @@ import {
 } from "./protocol.ts";
 import { type SessionSnapshot, snapshotSession } from "./session.ts";
 
-export type ForkStatus = "open" | CtreeCloseStatus;
-export type ForkPresentation = "active" | "dangling" | "squashed" | "rejected";
+type ForkStatus = "open" | CtreeCloseStatus;
+type ForkPresentation = "active" | "dangling" | "squashed" | "rejected";
 
 export interface ForkInfo {
 	entryId: string;
@@ -83,7 +83,7 @@ const ARGUMENT_CONFIGURATION = {
 } as const;
 let modelReferences: string[] = [];
 
-export function extractForks(session: SessionManagerView): ForkInfo[] {
+function extractForks(session: SessionManagerView): ForkInfo[] {
 	const entries = session.getEntries();
 	const closes = new Map<string, { entryId: string; data: CtreeCloseData }>();
 	for (const entry of entries) {
@@ -108,7 +108,7 @@ export function extractForks(session: SessionManagerView): ForkInfo[] {
 	return forks;
 }
 
-export function siblingForks(forks: ForkInfo[], forkEntryId: string): ForkInfo[] {
+function siblingForks(forks: ForkInfo[], forkEntryId: string): ForkInfo[] {
 	const selected = forks.find((fork) => fork.entryId === forkEntryId);
 	if (!selected) return [];
 	return forks.filter(
@@ -134,17 +134,13 @@ export function decisionsOnPath(branch: readonly SessionEntry[]): CustomMessageE
 	);
 }
 
-export function forkEntries(entries: readonly SessionEntry[]): CustomEntry[] {
-	return entries.filter((entry): entry is CustomEntry => Boolean(ctreeForkData(entry)));
-}
-
 export function deriveState(ctx: ExtensionContext): SessionState {
 	const snapshot = snapshotSession(ctx.sessionManager);
 	const forks = extractForks(ctx.sessionManager);
 	return { ...snapshot, forks, currentFork: nearestOpenFork(snapshot.branch, forks) };
 }
 
-export function branchEntries(state: SessionState, forkEntryId: string): SessionEntry[] {
+function branchEntries(state: SessionState, forkEntryId: string): SessionEntry[] {
 	const forkIndex = state.branch.findIndex((entry) => entry.id === forkEntryId);
 	if (forkIndex === -1) return [];
 	const afterFork = new Set(state.branch.slice(forkIndex + 1).map((entry) => entry.id));
@@ -167,7 +163,7 @@ export function resolveModel(ctx: ExtensionContext, reference: string): ModelLik
 	return matches.length === 1 ? matches[0] : undefined;
 }
 
-export function rememberModels(ctx: ExtensionContext): void {
+function rememberModels(ctx: ExtensionContext): void {
 	modelReferences = ctx.modelRegistry.getAll().map((model) => `${model.provider}/${model.id}`);
 }
 

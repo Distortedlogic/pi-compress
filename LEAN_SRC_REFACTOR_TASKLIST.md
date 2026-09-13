@@ -271,20 +271,20 @@ src/
 
 **Depends on:** WU-09
 
-- [ ] Remove `chalk`.
-- [ ] Add direct runtime dependencies for `yargs-parser` and `minimatch`.
-- [ ] Put Pi-hosted packages and `typebox` in `peerDependencies` with `"*"` ranges, as required by Pi package rules.
-- [ ] Keep exact Pi and TypeBox versions in `devDependencies` for repeatable local checks.
-- [ ] Add `knip` as a development dependency and configure `src/index.ts`, `src/protocol.ts`, and retained tests as entry points.
-- [ ] Remove `@xterm/headless` if the final TUI smoke case no longer imports it.
-- [ ] Update `package-lock.json` through npm. Do not edit lock data by hand.
-- [ ] Remove empty directories, barrels, unused exports, aliases, and dead dependencies reported by Knip.
-- [ ] Keep `private: true` unless publication is a separate approved task.
+- [x] Remove `chalk`.
+- [x] Add direct runtime dependencies for `yargs-parser` and `minimatch`.
+- [x] Put Pi-hosted packages and `typebox` in `peerDependencies` with `"*"` ranges, as required by Pi package rules.
+- [x] Keep exact Pi and TypeBox versions in `devDependencies` for repeatable local checks.
+- [x] Add `knip` as a development dependency and configure `src/index.ts`, `src/protocol.ts`, and retained tests as entry points.
+- [x] Remove `@xterm/headless` if the final TUI smoke case no longer imports it.
+- [x] Update `package-lock.json` through npm. Do not edit lock data by hand.
+- [x] Remove empty directories, barrels, unused exports, aliases, and dead dependencies reported by Knip.
+- [x] Keep `private: true` unless publication is a separate approved task.
 
 **Gate**
 
-- [ ] `npx knip` reports no unapproved unused files, exports, or dependencies.
-- [ ] Production code imports only declared runtime or peer dependencies.
+- [x] `npx knip` reports no unapproved unused files, exports, or dependencies.
+- [x] Production code imports only declared runtime or peer dependencies.
 
 ### WU-11 — Update names and documentation without changing stored data
 

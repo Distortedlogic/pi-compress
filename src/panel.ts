@@ -87,7 +87,7 @@ export type PanelAction =
 	| { type: "merge" }
 	| { type: "crop-apply"; plan: CropPlan; dryRun: boolean };
 
-export interface PanelHeader {
+interface PanelHeader {
 	project: string;
 	sessionName?: string;
 	branchName: string;
@@ -101,7 +101,7 @@ export interface PanelHeader {
 	readOnly: boolean;
 }
 
-export interface GaugeInput {
+interface GaugeInput {
 	tokens: number | null;
 	window?: number;
 	estimated?: boolean;
@@ -130,7 +130,7 @@ function bandText(theme: PiTheme, value: Band, text: string): string {
 	return theme.fg("success", text);
 }
 
-export function renderGauge(input: GaugeInput, theme: PiTheme): string {
+function renderGauge(input: GaugeInput, theme: PiTheme): string {
 	const barWidth = input.barWidth ?? 30;
 	if (input.tokens === null || !input.window || input.window <= 0) {
 		return `${theme.fg("dim", "CONTEXT")} ${theme.fg("dim", "░".repeat(barWidth))} ${theme.fg(
@@ -158,7 +158,7 @@ export function renderGauge(input: GaugeInput, theme: PiTheme): string {
 	return `${theme.fg("dim", "CONTEXT")} ${barText} ${label}`;
 }
 
-export function panelHeader(input: PanelInput, view: PanelView): PanelHeader {
+function panelHeader(input: PanelInput, view: PanelView): PanelHeader {
 	const currentFork = nearestOpenFork(input.branch, input.forks);
 	const hasUsage = typeof input.usageTokens === "number" && input.usageTokens > 0;
 	const tokens = hasUsage ? (input.usageTokens as number) : estimateContextTokens(input.contextEntries);
@@ -777,7 +777,7 @@ function isCommandContext(ctx: ExtensionContext): ctx is ExtensionCommandContext
 	return "navigateTree" in ctx;
 }
 
-export async function executePanelAction(
+async function executePanelAction(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	action: PanelAction | undefined,

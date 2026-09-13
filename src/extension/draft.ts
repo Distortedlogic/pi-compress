@@ -2,7 +2,7 @@
 
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { type ModelLike, resolveModel } from "../branches.ts";
-import { estimateTextTokens } from "../core/index.ts";
+import { estimateTextTokens } from "../core/estimate.ts";
 
 export type DraftFn = (
 	ctx: ExtensionCommandContext,
@@ -22,7 +22,7 @@ export const DRAFT_SYSTEM_PROMPT = [
 	"Be specific: real file paths, real failure modes, real numbers from the transcript.",
 ].join("\n");
 
-export const RANGE_COMPRESSION_SYSTEM_PROMPT = [
+const RANGE_COMPRESSION_SYSTEM_PROMPT = [
 	"Summarize one user-selected range from a coding-agent session.",
 	"Return summary text only. Do not add a preamble, analysis, or comments about summarizing.",
 	"Preserve all information that later work can depend on:",
@@ -74,7 +74,7 @@ export function draftUserPrompt(branchName: string, template: string, serialized
 }
 
 /** Build the summary request with the complete selected source and no per-message truncation. */
-export function rangeCompressionUserPrompt(selectedSerialized: string, instructions?: string): string {
+function rangeCompressionUserPrompt(selectedSerialized: string, instructions?: string): string {
 	if (!selectedSerialized.trim()) throw new Error("the selected range has no serializable source text");
 	return [
 		"Summarize the complete selected session range below.",
