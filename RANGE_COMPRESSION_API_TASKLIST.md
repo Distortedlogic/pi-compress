@@ -14,16 +14,16 @@
 
 ## Work unit 1 — Move and establish the test suite
 
-- [ ] Run `npm test`, `npm run check`, and `npm run knip` before source changes. Record any existing failure.
-- [ ] Create the root `tests/` directory.
-- [ ] Move `src/__tests__/compression.test.ts` to `tests/compression.test.ts`.
-- [ ] Move `src/__tests__/extension.test.ts` to `tests/extension.test.ts`.
-- [ ] Move `src/__tests__/protocol.test.ts` to `tests/protocol.test.ts`.
-- [ ] Change test imports from `../...` to `../src/...`.
-- [ ] Change `tsconfig.json` `include` to `['src/**/*.ts', 'tests/**/*.ts']`.
-- [ ] Change the Knip entry pattern in `package.json` to `tests/**/*.test.ts`.
-- [ ] Remove `!src/**/*.test.ts` and `!src/__tests__/**` from `package.json` because tests no longer exist under `src`.
-- [ ] Run the three validation commands again before range-compression refactoring.
+- [x] Run `npm test`, `npm run check`, and `npm run knip` before source changes. Record any existing failure.
+- [x] Create the root `tests/` directory.
+- [x] Move `src/__tests__/compression.test.ts` to `tests/compression.test.ts`.
+- [x] Move `src/__tests__/extension.test.ts` to `tests/extension.test.ts`.
+- [x] Move `src/__tests__/protocol.test.ts` to `tests/protocol.test.ts`.
+- [x] Change test imports from `../...` to `../src/...`.
+- [x] Change `tsconfig.json` `include` to `['src/**/*.ts', 'tests/**/*.ts']`.
+- [x] Change the Knip entry pattern in `package.json` to `tests/**/*.test.ts`.
+- [x] Remove `!src/**/*.test.ts` and `!src/__tests__/**` from `package.json` because tests no longer exist under `src`.
+- [x] Run the three validation commands again before range-compression refactoring.
 
 **Completion gate:** The moved suite has the same results as the baseline, TypeScript checks the tests, and `src/__tests__` no longer exists.
 

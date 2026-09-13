@@ -15,16 +15,7 @@
 	"pi": {
 		"extensions": ["./src/index.ts"]
 	},
-	"files": [
-		"src",
-		"!src/**/*.test.ts",
-		"!src/__tests__/**",
-		"LICENSE",
-		"LICENSE.workstream",
-		"README.md",
-		"PROTOCOL.md",
-		"ORIGIN.md"
-	],
+	"files": ["src", "LICENSE", "LICENSE.workstream", "README.md", "PROTOCOL.md", "ORIGIN.md"],
 	"scripts": {
 		"test": "vitest run",
 		"check": "npm run typecheck && npm run lint",
@@ -56,7 +47,7 @@
 		"vitest": "4.1.11"
 	},
 	"knip": {
-		"entry": ["src/__tests__/*.test.ts"],
+		"entry": ["tests/**/*.test.ts"],
 		"project": ["src/**/*.ts"]
 	}
 }

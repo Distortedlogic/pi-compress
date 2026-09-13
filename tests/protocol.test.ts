@@ -29,7 +29,7 @@ import {
 	ctreeRangeCompactData,
 	ctreeRangeTailDetails,
 	parseCtreeDecisionDetails,
-} from "../protocol.ts";
+} from "../src/protocol.ts";
 
 const HASH = "a".repeat(64);
 const timestamp = "2026-06-12T00:00:00.000Z";

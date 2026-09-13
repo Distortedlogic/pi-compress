@@ -8,7 +8,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { applyCompression, prepareCompression, registerBatchCompression } from "../batch.ts";
+import { applyCompression, prepareCompression, registerBatchCompression } from "../src/batch.ts";
 import {
 	applyRewrite,
 	autoSelect,
@@ -24,10 +24,10 @@ import {
 	renderReconstruction,
 	resolveRangeEndpoint,
 	sourceSha8,
-} from "../compression.ts";
-import { aggregateConsumers } from "../core/consumers.ts";
-import { band, estimateEntryTokens, fmtTokens } from "../core/estimate.ts";
-import { serializeEntries } from "../core/serialize.ts";
+} from "../src/compression.ts";
+import { aggregateConsumers } from "../src/core/consumers.ts";
+import { band, estimateEntryTokens, fmtTokens } from "../src/core/estimate.ts";
+import { serializeEntries } from "../src/core/serialize.ts";
 import {
 	type BatchSnapshot,
 	COMPRESSION_ENTRY,
@@ -40,8 +40,8 @@ import {
 	type CompressionRequest,
 	type CompressionResult,
 	QUEUED_TASK_TAIL,
-} from "../protocol.ts";
-import { snapshotSession } from "../session.ts";
+} from "../src/protocol.ts";
+import { snapshotSession } from "../src/session.ts";
 
 initTheme("dark");
 

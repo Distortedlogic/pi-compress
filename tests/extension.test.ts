@@ -23,10 +23,10 @@ import {
 	renderDecisionRecord,
 	resetModelCompletions,
 	undoHandler,
-} from "../branches.ts";
-import { applyCropPlan, cropHandler, planCrop } from "../compression.ts";
-import type { Deps } from "../extension/draft.ts";
-import piContextCompress from "../index.ts";
+} from "../src/branches.ts";
+import { applyCropPlan, cropHandler, planCrop } from "../src/compression.ts";
+import type { Deps } from "../src/extension/draft.ts";
+import piContextCompress from "../src/index.ts";
 import {
 	ContextPanel,
 	buildPanelInput,
@@ -34,7 +34,7 @@ import {
 	registerAmbient,
 	registerPanel,
 	resetAmbient,
-} from "../panel.ts";
+} from "../src/panel.ts";
 import {
 	COMPRESSION_ENTRY,
 	CTREE_CLOSE,
@@ -43,8 +43,8 @@ import {
 	CTREE_DECISION,
 	CTREE_FORK,
 	CTREE_RANGE_COMPACT,
-} from "../protocol.ts";
-import { snapshotSession } from "../session.ts";
+} from "../src/protocol.ts";
+import { snapshotSession } from "../src/session.ts";
 
 initTheme("dark");
 
@@ -323,7 +323,7 @@ describe("extension registration and policy", () => {
 	});
 
 	it("keeps package entry points on the root source files", () => {
-		const packagePath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json");
+		const packagePath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
 		const manifest = JSON.parse(readFileSync(packagePath, "utf8"));
 		expect(manifest.exports).toEqual({ ".": "./src/index.ts", "./protocol": "./src/protocol.ts" });
 		expect(manifest.pi.extensions).toEqual(["./src/index.ts"]);
@@ -603,7 +603,7 @@ function piPath(): string | null {
 }
 
 const PI = piPath();
-const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
+const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "index.ts");
 
 describe.skipIf(!PI)("RPC integration", () => {
 	it("loads the source extension and returns all fixed commands", { timeout: 30_000 }, async () => {
