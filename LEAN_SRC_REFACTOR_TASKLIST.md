@@ -98,24 +98,24 @@ src/
 
 **Depends on:** WU-01
 
-- [ ] Move production TypeScript from `packages/core/src`, `packages/extension/src`, and `packages/tui/src` into `src/`.
-- [ ] Move all retained test TypeScript into `src/__tests__/`.
-- [ ] Move `fixtures/generate.ts` into `src/__tests__/` only if it remains necessary; otherwise delete it after fixture replacement.
-- [ ] Keep non-code fixtures under `src/__tests__/fixtures/` only when an inline fixture is not clear enough.
-- [ ] Update `package.json`:
-  - [ ] Set `exports["."]` to `./src/index.ts`.
-  - [ ] Set `exports["./protocol"]` to `./src/protocol.ts`.
-  - [ ] Set `pi.extensions` to `./src/index.ts`.
-  - [ ] Package runtime `src` files and exclude `src/**/*.test.ts` and `src/__tests__/**`.
-- [ ] Update `tsconfig.json` to include `src/**/*.ts` only.
-- [ ] Remove the `#core`, `#core/testkit`, and `#tui` import aliases.
-- [ ] Use direct relative imports.
-- [ ] Keep this unit structural. Do not change behavior in the same edits.
+- [x] Move production TypeScript from `packages/core/src`, `packages/extension/src`, and `packages/tui/src` into `src/`.
+- [x] Move all retained test TypeScript into `src/__tests__/`.
+- [x] Move `fixtures/generate.ts` into `src/__tests__/` only if it remains necessary; otherwise delete it after fixture replacement.
+- [x] Keep non-code fixtures under `src/__tests__/fixtures/` only when an inline fixture is not clear enough.
+- [x] Update `package.json`:
+  - [x] Set `exports["."]` to `./src/index.ts`.
+  - [x] Set `exports["./protocol"]` to `./src/protocol.ts`.
+  - [x] Set `pi.extensions` to `./src/index.ts`.
+  - [x] Package runtime `src` files and exclude `src/**/*.test.ts` and `src/__tests__/**`.
+- [x] Update `tsconfig.json` to include `src/**/*.ts` only.
+- [x] Remove the `#core`, `#core/testkit`, and `#tui` import aliases.
+- [x] Use direct relative imports.
+- [x] Keep this unit structural. Do not change behavior in the same edits.
 
 **Gate**
 
-- [ ] No TypeScript code remains in `packages/` or `fixtures/`.
-- [ ] The baseline tests and checks still pass.
+- [x] No TypeScript code remains in `packages/` or `fixtures/`.
+- [x] The baseline tests and checks still pass.
 
 ### WU-03 — Replace copied Pi infrastructure with public Pi APIs
 

@@ -8,22 +8,17 @@
 	"engines": {
 		"node": ">=22.19.0"
 	},
-	"imports": {
-		"#core": "./packages/core/src/index.ts",
-		"#core/testkit": "./packages/core/src/testkit.ts",
-		"#tui": "./packages/tui/src/index.ts"
-	},
 	"exports": {
-		".": "./packages/extension/src/index.ts",
-		"./protocol": "./packages/extension/src/protocol.ts"
+		".": "./src/index.ts",
+		"./protocol": "./src/protocol.ts"
 	},
 	"pi": {
-		"extensions": ["./packages/extension/src/index.ts"]
+		"extensions": ["./src/index.ts"]
 	},
 	"files": [
-		"packages/core/src",
-		"packages/tui/src",
-		"packages/extension/src",
+		"src",
+		"!src/**/*.test.ts",
+		"!src/__tests__/**",
 		"LICENSE",
 		"LICENSE.workstream",
 		"README.md",
