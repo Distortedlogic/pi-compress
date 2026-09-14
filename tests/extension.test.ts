@@ -29,7 +29,7 @@ import {
 import { applyCropPlan, cropHandler, planCrop } from "../src/compression.ts";
 import { estimateEntryTokens } from "../src/core/estimate.ts";
 import { applyRewrite, prepareRewrite, rangeCandidates, revalidateRewrite } from "../src/core/range-rewrite.ts";
-import type { Deps } from "../src/extension/draft.ts";
+import type { DraftFn } from "../src/extension/draft.ts";
 import piContextCompress from "../src/index.ts";
 import {
 	ContextPanel,
@@ -484,10 +484,8 @@ async function seedBranch(value: World, name = "feature", model = "cheap-model")
 	return fork.id;
 }
 
-const deps: Deps = {
-	draft: async (_ctx, _model, system) =>
-		system.includes("epitaph") ? "too complex" : "## Decision: feature\n**Outcome:** selected the safe option.\n",
-};
+const draft: DraftFn = async (_ctx, _model, system) =>
+	system.includes("epitaph") ? "too complex" : "## Decision: feature\n**Outcome:** selected the safe option.\n";
 
 beforeEach(() => {
 	resetAmbient();
@@ -1167,7 +1165,7 @@ describe("branch and merge contracts", () => {
 		const value = world();
 		const forkId = await seedBranch(value);
 		value.ui.editorQueue.push("__PREFILL__");
-		await mergeHandler(value.pi, value.ctx, mode, deps);
+		await mergeHandler(value.pi, value.ctx, mode, draft);
 		expect(durableSequence(value.session.manager)).toEqual([CTREE_FORK, CTREE_DECISION, CTREE_CLOSE]);
 		expect(value.navigations).toContainEqual({ entryId: forkId, summarize: false });
 		expect(value.modelsSet.at(-1)).toBe("openai/test-model");
@@ -1177,7 +1175,7 @@ describe("branch and merge contracts", () => {
 		const value = world();
 		await seedBranch(value);
 		value.ui.editorQueue.push(undefined);
-		await mergeHandler(value.pi, value.ctx, "--squash", deps);
+		await mergeHandler(value.pi, value.ctx, "--squash", draft);
 		expect(durableSequence(value.session.manager)).toEqual([CTREE_FORK]);
 		expect(value.navigations).toHaveLength(0);
 	});
@@ -1185,7 +1183,7 @@ describe("branch and merge contracts", () => {
 	it("keeps the inline discard sequence", async () => {
 		const value = world();
 		const forkId = await seedBranch(value);
-		await mergeHandler(value.pi, value.ctx, "--discard rejected", deps);
+		await mergeHandler(value.pi, value.ctx, "--discard rejected", draft);
 		expect(durableSequence(value.session.manager)).toEqual([CTREE_FORK, CTREE_CLOSE]);
 		expect(value.navigations).toContainEqual({ entryId: forkId, summarize: false });
 	});
@@ -1201,7 +1199,7 @@ describe("branch and merge contracts", () => {
 			value.session.assistant(`${name} result`);
 		}
 		value.ui.editorQueue.push("__PREFILL__");
-		await mergeHandler(value.pi, value.ctx, "--tournament", deps);
+		await mergeHandler(value.pi, value.ctx, "--tournament", draft);
 		expect(durableSequence(value.session.manager)).toEqual([
 			CTREE_FORK,
 			CTREE_FORK,
@@ -1374,7 +1372,7 @@ describe("ambient and panel behavior", () => {
 			optionsSeen.push(options);
 			return { type: "close" } as T;
 		};
-		registerPanel(value.pi, deps);
+		registerPanel(value.pi, draft);
 		await value.shortcuts.get("ctrl+q")?.(value.ctx);
 		expect(optionsSeen).toEqual([{ overlay: true, overlayOptions: { anchor: "center", width: "100%" } }]);
 	});
@@ -1449,7 +1447,7 @@ describe("ambient and panel behavior", () => {
 	it("keeps panel command, shortcut, no-UI decisions, and read-only paths", async () => {
 		const value = world();
 		value.session.user("root");
-		registerPanel(value.pi, deps);
+		registerPanel(value.pi, draft);
 		(value.ctx as unknown as { mode: string }).mode = "print";
 		await value.commands.get("decisions")?.("", value.ctx);
 		expect(value.ui.notifications.at(-1)?.message).toContain("no decision records");

@@ -11,19 +11,17 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerBatchCompression } from "./batch.ts";
 import { registerBranch, registerMerge, registerUndo } from "./branches.ts";
 import { registerCrop } from "./compression.ts";
-import { type Deps, realDraft } from "./extension/draft.ts";
+import { realDraft } from "./extension/draft.ts";
 import { registerAmbient, registerDecisionRenderer, registerPanel } from "./panel.ts";
 import { registerRangeCompress, registerRangeCompressionService } from "./range-compression.ts";
 
 export default function piContextCompress(api: ExtensionAPI): void {
-	const deps: Deps = { draft: realDraft };
-
 	registerBranch(api);
-	registerMerge(api, deps);
+	registerMerge(api, realDraft);
 	registerCrop(api);
 	registerRangeCompress(api);
 	registerRangeCompressionService(api);
-	registerPanel(api, deps);
+	registerPanel(api, realDraft);
 	registerUndo(api);
 	registerAmbient(api);
 	registerDecisionRenderer(api);

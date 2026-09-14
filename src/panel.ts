@@ -46,7 +46,7 @@ import {
 import { aggregateConsumers } from "./core/consumers.ts";
 import { BAND_THRESHOLDS, type Band, band, estimateEntryTokens, fmtTokens } from "./core/estimate.ts";
 import { serializeEntry } from "./core/serialize.ts";
-import type { Deps } from "./extension/draft.ts";
+import type { DraftFn } from "./extension/draft.ts";
 import {
 	CTREE_DECISION,
 	type CtreeDecisionDetails,
@@ -773,7 +773,7 @@ async function executePanelAction(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	action: PanelAction | undefined,
-	deps: Deps,
+	draft: DraftFn,
 ): Promise<void> {
 	if (!action || action.type === "close") return;
 	if (!isCommandContext(ctx)) {
@@ -798,7 +798,7 @@ async function executePanelAction(
 			return;
 		}
 		case "merge":
-			await mergeHandler(pi, ctx, "", deps);
+			await mergeHandler(pi, ctx, "", draft);
 			return;
 		case "crop-apply":
 			if (action.dryRun) {
@@ -812,24 +812,24 @@ async function executePanelAction(
 async function runPanel(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
-	deps: Deps,
+	draft: DraftFn,
 	opts: PanelOpenOptions = {},
 ): Promise<void> {
 	for (let count = 0; count < 50; count++) {
 		const action = await openPanel(pi, ctx, opts);
 		if (!action || action.type === "close") return;
-		await executePanelAction(pi, ctx, action, deps);
+		await executePanelAction(pi, ctx, action, draft);
 	}
 }
 
-export function registerPanel(pi: ExtensionAPI, deps: Deps): void {
+export function registerPanel(pi: ExtensionAPI, draft: DraftFn): void {
 	pi.registerCommand("panel", {
 		description: "pi-context-tree: full-screen context panel (tree · crop · consumers · decisions)",
-		handler: (_args, ctx) => runPanel(pi, ctx, deps),
+		handler: (_args, ctx) => runPanel(pi, ctx, draft),
 	});
 	pi.registerShortcut("ctrl+q", {
 		description: "pi-context-tree: open the context panel",
-		handler: (ctx) => runPanel(pi, ctx, deps, { readOnly: !isCommandContext(ctx) }),
+		handler: (ctx) => runPanel(pi, ctx, draft, { readOnly: !isCommandContext(ctx) }),
 	});
 	pi.registerCommand("decisions", {
 		description: "pi-context-tree: decision records on the current trunk (F7) — --export [path] for portable markdown",
@@ -843,7 +843,7 @@ export function registerPanel(pi: ExtensionAPI, deps: Deps): void {
 				notifyDecisions(ctx);
 				return;
 			}
-			await runPanel(pi, ctx, deps, { initialView: "decisions" });
+			await runPanel(pi, ctx, draft, { initialView: "decisions" });
 		},
 		getArgumentCompletions: (prefix) =>
 			"--export".startsWith(prefix.split(/\s+/).pop() ?? "") ? [{ value: "--export", label: "--export" }] : null,

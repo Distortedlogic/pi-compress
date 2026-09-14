@@ -1,7 +1,7 @@
 /** Decision-record drafting through Pi's public model registry. */
 
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { type ModelLike, resolveModel } from "../branches.ts";
+import { type Model, contentText } from "@earendil-works/pi-ai";
+import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { estimateTextTokens } from "../core/estimate.ts";
 
 export type DraftFn = (
@@ -12,8 +12,20 @@ export type DraftFn = (
 	signal?: AbortSignal,
 ) => Promise<string>;
 
-export interface Deps {
-	draft: DraftFn;
+export function modelKey(model: Model<any> | undefined): string | undefined {
+	return model ? `${model.provider}/${model.id}` : undefined;
+}
+
+export function resolveModel(ctx: ExtensionContext, reference: string): Model<any> | undefined {
+	if (reference.includes("/")) {
+		const [provider, ...modelId] = reference.split("/");
+		return ctx.modelRegistry.find(provider ?? "", modelId.join("/"));
+	}
+	const models = ctx.modelRegistry.getAll();
+	const exact = models.find((model) => model.id === reference);
+	if (exact) return exact;
+	const matches = models.filter((model) => model.id.includes(reference));
+	return matches.length === 1 ? matches[0] : undefined;
 }
 
 export const DRAFT_SYSTEM_PROMPT = [
@@ -38,7 +50,7 @@ const RANGE_COMPRESSION_SYSTEM_PROMPT = [
 ].join("\n");
 
 export const realDraft: DraftFn = async (ctx, modelRef, system, user, signal) => {
-	const model: ModelLike | undefined = (modelRef ? resolveModel(ctx, modelRef) : undefined) ?? ctx.model;
+	const model: Model<any> | undefined = (modelRef ? resolveModel(ctx, modelRef) : undefined) ?? ctx.model;
 	if (!model) throw new Error("no model available for drafting");
 	const response = await ctx.modelRegistry.complete(
 		model,
@@ -48,11 +60,7 @@ export const realDraft: DraftFn = async (ctx, modelRef, system, user, signal) =>
 		},
 		{ signal },
 	);
-	const text = (response.content as { type: string; text?: string }[])
-		.filter((b) => b.type === "text")
-		.map((b) => b.text ?? "")
-		.join("\n")
-		.trim();
+	const text = contentText(response.content, "\n").trim();
 	if (!text) throw new Error("model returned an empty draft");
 	return text;
 };
@@ -89,7 +97,7 @@ function rangeCompressionUserPrompt(selectedSerialized: string, instructions?: s
 
 function assertRangeSummaryFits(ctx: ExtensionCommandContext, userPrompt: string): void {
 	if (!ctx.model) throw new Error("cannot check the selected range size because no current model is available");
-	const contextWindow = ctx.model.contextWindow ?? ctx.getContextUsage?.()?.contextWindow;
+	const contextWindow = ctx.model.contextWindow;
 	const modelRef = `${ctx.model.provider}/${ctx.model.id}`;
 	if (!contextWindow || contextWindow <= 0) {
 		throw new Error(

@@ -184,24 +184,24 @@ Add cases to the current test suites. Do not create a second test harness.
 
 **Files:** `src/branches.ts`, `src/extension/draft.ts`, `src/index.ts`, related existing tests
 
-- [ ] Move `modelKey()` and `resolveModel()` from `branches.ts` to the draft module.
-- [ ] Import `Model` directly from `@earendil-works/pi-ai` in the draft module.
-- [ ] Delete the `ModelLike` alias.
-- [ ] Change `branches.ts` to import model helpers from the draft module.
-- [ ] Confirm that the draft module no longer imports `branches.ts`.
-- [ ] Replace the one-field `Deps` interface with direct `DraftFn` parameters.
-- [ ] Change `registerMerge()`, `mergeHandler()`, `registerPanel()`, and panel execution code to receive `DraftFn` directly.
-- [ ] Delete `const deps: Deps = { draft: realDraft }` from `index.ts`.
-- [ ] Replace manual response block filtering in `realDraft()` with `contentText(response.content, "\n")`.
-- [ ] Use `ctx.model.contextWindow` directly in the range-size check.
-- [ ] Keep the explicit invalid or zero context-window error.
+- [x] Move `modelKey()` and `resolveModel()` from `branches.ts` to the draft module.
+- [x] Import `Model` directly from `@earendil-works/pi-ai` in the draft module.
+- [x] Delete the `ModelLike` alias.
+- [x] Change `branches.ts` to import model helpers from the draft module.
+- [x] Confirm that the draft module no longer imports `branches.ts`.
+- [x] Replace the one-field `Deps` interface with direct `DraftFn` parameters.
+- [x] Change `registerMerge()`, `mergeHandler()`, `registerPanel()`, and panel execution code to receive `DraftFn` directly.
+- [x] Delete `const deps: Deps = { draft: realDraft }` from `index.ts`.
+- [x] Replace manual response block filtering in `realDraft()` with `contentText(response.content, "\n")`.
+- [x] Use `ctx.model.contextWindow` directly in the range-size check.
+- [x] Keep the explicit invalid or zero context-window error.
 
 ### Acceptance gate
 
-- [ ] There is no `branches.ts` ↔ draft-module cycle.
-- [ ] Fake draft functions still work in existing tests.
-- [ ] Decision and range prompts are unchanged.
-- [ ] `npm test` and `npm run check` pass.
+- [x] There is no `branches.ts` ↔ draft-module cycle.
+- [x] Fake draft functions still work in existing tests.
+- [x] Decision and range prompts are unchanged.
+- [x] `npm test` and `npm run check` pass.
 
 ---
 

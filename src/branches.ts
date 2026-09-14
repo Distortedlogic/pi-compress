@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { type Model, contentText } from "@earendil-works/pi-ai";
+import { contentText } from "@earendil-works/pi-ai";
 import type {
 	CustomEntry,
 	CustomMessageEntry,
@@ -11,7 +11,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import parseArgs from "yargs-parser";
 import { serializeEntries } from "./core/serialize.ts";
-import { DRAFT_SYSTEM_PROMPT, type Deps, draftUserPrompt } from "./extension/draft.ts";
+import { DRAFT_SYSTEM_PROMPT, type DraftFn, draftUserPrompt, modelKey, resolveModel } from "./extension/draft.ts";
 import { refreshAmbient } from "./panel.ts";
 import {
 	CTREE_CLOSE,
@@ -47,8 +47,6 @@ export interface SessionState extends SessionSnapshot {
 	forks: ForkInfo[];
 	currentFork: ForkInfo | undefined;
 }
-
-export type ModelLike = Model<any>;
 
 export interface DecisionDraft {
 	branchName: string;
@@ -144,22 +142,6 @@ function branchEntries(state: SessionState, forkEntryId: string): SessionEntry[]
 	if (forkIndex === -1) return [];
 	const afterFork = new Set(state.branch.slice(forkIndex + 1).map((entry) => entry.id));
 	return state.contextEntries.filter((entry) => afterFork.has(entry.id));
-}
-
-function modelKey(model: ModelLike | undefined): string | undefined {
-	return model ? `${model.provider}/${model.id}` : undefined;
-}
-
-export function resolveModel(ctx: ExtensionContext, reference: string): ModelLike | undefined {
-	if (reference.includes("/")) {
-		const [provider, ...modelId] = reference.split("/");
-		return ctx.modelRegistry.find(provider ?? "", modelId.join("/"));
-	}
-	const models = ctx.modelRegistry.getAll();
-	const exact = models.find((model) => model.id === reference);
-	if (exact) return exact;
-	const matches = models.filter((model) => model.id.includes(reference));
-	return matches.length === 1 ? matches[0] : undefined;
 }
 
 function rememberModels(ctx: ExtensionContext): void {
@@ -367,10 +349,10 @@ function siblingTail(ctx: ExtensionCommandContext, sibling: ForkInfo): SessionEn
 		);
 }
 
-async function epitaphFor(deps: Deps, ctx: ExtensionCommandContext, sibling: ForkInfo): Promise<string> {
+async function epitaphFor(draft: DraftFn, ctx: ExtensionCommandContext, sibling: ForkInfo): Promise<string> {
 	const serialized = serializeEntries(siblingTail(ctx, sibling), { perEntryCap: 800 }).slice(0, 8000);
 	try {
-		const text = await deps.draft(
+		const text = await draft(
 			ctx,
 			sibling.data.branchModel,
 			"You write one-line epitaphs for rejected engineering approaches. Output ONE line, ≤120 chars, format: <reason it was rejected>.",
@@ -399,7 +381,7 @@ export async function mergeHandler(
 	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
 	args: string,
-	deps: Deps,
+	draftFn: DraftFn,
 ): Promise<void> {
 	await ctx.waitForIdle();
 	const state = deriveState(ctx);
@@ -448,7 +430,7 @@ export async function mergeHandler(
 	} else {
 		ctx.ui.notify(`drafting decision record with ${branchModelRef ?? "current model"}…`, "info");
 		try {
-			draft = await deps.draft(
+			draft = await draftFn(
 				ctx,
 				fork.data.branchModel,
 				DRAFT_SYSTEM_PROMPT,
@@ -471,7 +453,7 @@ export async function mergeHandler(
 	const rejected: { name: string; reason: string }[] = [];
 	if (mode === "tournament") {
 		for (const sibling of siblings) {
-			rejected.push({ name: sibling.data.name, reason: await epitaphFor(deps, ctx, sibling) });
+			rejected.push({ name: sibling.data.name, reason: await epitaphFor(draftFn, ctx, sibling) });
 		}
 		const lines = [draft.trimEnd()];
 		if (!draft.includes("### Rejected alternatives")) lines.push("### Rejected alternatives");
@@ -611,10 +593,10 @@ export function registerBranch(pi: ExtensionAPI): void {
 	});
 }
 
-export function registerMerge(pi: ExtensionAPI, deps: Deps): void {
+export function registerMerge(pi: ExtensionAPI, draft: DraftFn): void {
 	pi.registerCommand("merge", {
 		description: "pi-context-tree: close the open branch — squash (default) | --pick | --discard | --tournament",
-		handler: (args, ctx) => mergeHandler(pi, ctx, args, deps),
+		handler: (args, ctx) => mergeHandler(pi, ctx, args, draft),
 		getArgumentCompletions: (prefix) => {
 			const flags = ["--squash", "--no-llm", "--discard", "--tournament", "--pick"];
 			const last = prefix.split(/\s+/).pop() ?? "";
