@@ -111,7 +111,7 @@ export function renderDecisionRecord(draft: DecisionDraft): string {
 
 export function exportDecisionsMarkdown(records: readonly string[], project?: string): string {
 	const title = `# Decision records${project ? ` — ${project}` : ""}`;
-	const meta = `_${records.length} record${records.length === 1 ? "" : "s"} · exported by pi-context-tree_`;
+	const meta = `_${records.length} record${records.length === 1 ? "" : "s"} · exported by pi-context-compress_`;
 	if (records.length === 0) {
 		return `${title}\n\n${meta}\n\n_(none yet — \`/merge\` → squash creates them.)_\n`;
 	}
@@ -491,7 +491,7 @@ export async function undoHandler(pi: ExtensionAPI, ctx: ExtensionCommandContext
 	await ctx.waitForIdle();
 	const step = lastUndo(deriveState(ctx));
 	if (!step) {
-		ctx.ui.notify("nothing to undo — no pi-context-tree mutation on the current branch", "info");
+		ctx.ui.notify("nothing to undo — no pi-context-compress mutation on the current branch", "info");
 		return;
 	}
 	const confirmed = await ctx.ui.confirm("Undo last change", `↩ ${step.describe}? (nothing is deleted — append-only)`);
@@ -513,7 +513,7 @@ export function registerBranch(pi: ExtensionAPI): void {
 	pi.on("session_start", refreshModels);
 	pi.on("model_select", refreshModels);
 	pi.registerCommand("branch", {
-		description: "pi-context-tree: label this point and branch off (optionally onto a cheaper model)",
+		description: "pi-context-compress: label this point and branch off (optionally onto a cheaper model)",
 		handler: (args, ctx) => branchHandler(pi, ctx, args),
 		getArgumentCompletions: modelCompletions,
 	});
@@ -521,7 +521,7 @@ export function registerBranch(pi: ExtensionAPI): void {
 
 export function registerMerge(pi: ExtensionAPI, draft: DraftFn): void {
 	pi.registerCommand("merge", {
-		description: "pi-context-tree: close the open branch — squash (default) | --pick | --discard | --tournament",
+		description: "pi-context-compress: close the open branch — squash (default) | --pick | --discard | --tournament",
 		handler: (args, ctx) => mergeHandler(pi, ctx, args, draft),
 		getArgumentCompletions: (prefix) => {
 			const flags = ["--squash", "--no-llm", "--discard", "--tournament", "--pick"];
@@ -534,7 +534,7 @@ export function registerMerge(pi: ExtensionAPI, draft: DraftFn): void {
 
 export function registerUndo(pi: ExtensionAPI): void {
 	pi.registerCommand("undo", {
-		description: "pi-context-tree: revert the last mutation (re-open a branch / restore a crop) — append-only",
+		description: "pi-context-compress: revert the last mutation (re-open a branch / restore a crop) — append-only",
 		handler: (_args, ctx) => undoHandler(pi, ctx),
 	});
 }

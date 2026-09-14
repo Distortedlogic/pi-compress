@@ -1,12 +1,3 @@
-/**
- * pi-context-tree — pi extension entry point. Load with:
- *   pi -e /path/to/pi-context-tree/src/index.ts
- * or symlink this package into ~/.pi/agent/extensions/ for auto-discovery.
- *
- * Commands: /branch /merge /crop /compress /panel /decisions (+ Ctrl+Q).
- * Pinned against pi 0.84.3 — see pi-context-tree-architecture.md.
- */
-
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerAmbient } from "./ambient.ts";
 import { registerBranch, registerMerge, registerUndo } from "./branches.ts";

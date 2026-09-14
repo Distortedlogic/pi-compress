@@ -546,24 +546,24 @@ Build one domain-specific coordinator. Do not build a reusable workflow framewor
 
 **Files:** `src/index.ts`, `package.json`, `README.md`, `PROTOCOL.md`, `ORIGIN.md`, user-visible source strings
 
-- [ ] Remove the stale `src/index.ts` header that refers to `pi-context-tree`, a missing architecture file, and a fixed Pi version.
-- [ ] Remove `if (api.events)` because `events` is required by `ExtensionAPI`.
-- [ ] Register the unified compression services directly.
-- [ ] Keep `index.ts` as registration code only.
-- [ ] Use `pi-context-compress` in current user-visible titles, descriptions, notifications, and documentation.
-- [ ] Keep old `ctree/*` and legacy workstream identifiers only where stored-session or protocol compatibility requires them.
-- [ ] Update source paths in package exports only where a target file actually moved.
-- [ ] Confirm that production dependencies remain in `dependencies` and Pi-provided packages remain in `peerDependencies`.
-- [ ] Do not replace `minimatch`, `yargs-parser`, TypeBox, or Pi TUI components with custom code.
-- [ ] Confirm that `files` still includes every published source and required document.
+- [x] Remove the stale `src/index.ts` header that refers to `pi-context-tree`, a missing architecture file, and a fixed Pi version.
+- [x] Remove `if (api.events)` because `events` is required by `ExtensionAPI`.
+- [x] Register the unified compression services directly.
+- [x] Keep `index.ts` as registration code only.
+- [x] Use `pi-context-compress` in current user-visible titles, descriptions, notifications, and documentation.
+- [x] Keep old `ctree/*` and legacy workstream identifiers only where stored-session or protocol compatibility requires them.
+- [x] Update source paths in package exports only where a target file actually moved.
+- [x] Confirm that production dependencies remain in `dependencies` and Pi-provided packages remain in `peerDependencies`.
+- [x] Do not replace `minimatch`, `yargs-parser`, TypeBox, or Pi TUI components with custom code.
+- [x] Confirm that `files` still includes every published source and required document.
 
 ### Acceptance gate
 
-- [ ] The package has one current user-visible identity.
-- [ ] Stored sessions need no migration.
-- [ ] Root, protocol, and range-compression imports still resolve.
-- [ ] Extension registration contains no compatibility test that is always true.
-- [ ] `npm test`, `npm run check`, and `npm run knip` pass.
+- [x] The package has one current user-visible identity.
+- [x] Stored sessions need no migration.
+- [x] Root, protocol, and range-compression imports still resolve.
+- [x] Extension registration contains no compatibility test that is always true.
+- [x] `npm test`, `npm run check`, and `npm run knip` pass.
 
 ---
 

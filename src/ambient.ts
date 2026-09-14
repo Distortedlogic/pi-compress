@@ -132,7 +132,7 @@ export function registerAmbient(pi: ExtensionAPI): void {
 	pi.on("session_tree", (_event, ctx) => refreshAmbient(ctx));
 	pi.on("session_before_compact", (_event, ctx) => {
 		ctx.ui.notify(
-			"heads-up: /compact replaces source material with a lossy summary — pi-context-tree prefers /branch + /merge (decision records), /compress (reviewed range summaries), or /crop. Continuing anyway (F5.4).",
+			"heads-up: /compact replaces source material with a lossy summary — pi-context-compress prefers /branch + /merge (decision records), /compress (reviewed range summaries), or /crop. Continuing anyway (F5.4).",
 			"warning",
 		);
 	});

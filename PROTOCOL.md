@@ -139,7 +139,7 @@ Send a later `apply` request with the same `sessionId` and `operationId`. Subscr
 
 ## Idempotency and cancellation
 
-Prepared work is keyed by `sessionId:operationId`.
+Prepared work is keyed by `kind:sessionId:operationId`, so range and batch operations with equal IDs stay separate.
 
 - An identical in-flight request, without its `requestId`, receives the prior outcome.
 - A different prepare request for the same operation key fails with `operation_conflict`.
