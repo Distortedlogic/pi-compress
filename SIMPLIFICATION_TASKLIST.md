@@ -141,7 +141,7 @@ No module below `index.ts` may import `index.ts`. `ambient.ts` must not import `
 
 Add cases to the current test suites. Do not create a second test harness.
 
-- [ ] Lock range-candidate protection for:
+- [x] Lock range-candidate protection for:
   - Root entries with no anchor.
   - Incomplete user turns.
   - Complete assistant tool-call groups.
@@ -150,10 +150,10 @@ Add cases to the current test suites. Do not create a second test harness.
   - Decision records.
   - Branch summaries and compaction summaries.
   - Context-inert metadata.
-- [ ] Lock rewrite planning for selected IDs, continuation IDs, source serialization, token estimates, and source hashes.
-- [ ] Lock rewrite revalidation for session changes, leaf changes, missing anchors, selected-source changes, and continuation changes.
-- [ ] Lock append-only apply behavior and cancelled navigation behavior.
-- [ ] Lock normal range protocol behavior:
+- [x] Lock rewrite planning for selected IDs, continuation IDs, source serialization, token estimates, and source hashes.
+- [x] Lock rewrite revalidation for session changes, leaf changes, missing anchors, selected-source changes, and continuation changes.
+- [x] Lock append-only apply behavior and cancelled navigation behavior.
+- [x] Lock normal range protocol behavior:
   - Prepare.
   - Duplicate prepare with a different `requestId`.
   - Conflicting prepare.
@@ -163,18 +163,18 @@ Add cases to the current test suites. Do not create a second test harness.
   - Repeated apply after the marker exists.
   - Cancel while absent, preparing, prepared, and applying.
   - Busy and session-change results.
-- [ ] Lock batch protocol behavior for the same state transitions.
-- [ ] Lock the distinct output entries for normal range compression and batch compression.
-- [ ] Lock parsing of legacy `pi-workstream/compression` entries.
-- [ ] Lock `/compress` review requirements and non-TUI rejection.
-- [ ] Lock `/crop` protected-result override behavior.
-- [ ] Lock `Ctrl+Q` panel opening behavior.
+- [x] Lock batch protocol behavior for the same state transitions.
+- [x] Lock the distinct output entries for normal range compression and batch compression.
+- [x] Lock parsing of legacy `pi-workstream/compression` entries.
+- [x] Lock `/compress` review requirements and non-TUI rejection.
+- [x] Lock `/crop` protected-result override behavior.
+- [x] Lock `Ctrl+Q` panel opening behavior.
 
 ### Acceptance gate
 
-- [ ] All baseline behavior has test coverage in the existing suites.
-- [ ] `npm test` passes, apart from a previously recorded baseline failure.
-- [ ] No production source changed in this work unit.
+- [x] All baseline behavior has test coverage in the existing suites.
+- [x] `npm test` passes, apart from a previously recorded baseline failure.
+- [x] No production source changed in this work unit.
 
 ---
 

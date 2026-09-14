@@ -1,4 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -14,6 +15,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Component, visibleWidth } from "@earendil-works/pi-tui";
 import { beforeEach, describe, expect, it } from "vitest";
+import { registerBatchCompression } from "../src/batch.ts";
 import {
 	branchHandler,
 	exportDecisionsMarkdown,
@@ -25,6 +27,8 @@ import {
 	undoHandler,
 } from "../src/branches.ts";
 import { applyCropPlan, cropHandler, planCrop } from "../src/compression.ts";
+import { estimateEntryTokens } from "../src/core/estimate.ts";
+import { applyRewrite, prepareRewrite, rangeCandidates, revalidateRewrite } from "../src/core/range-rewrite.ts";
 import type { Deps } from "../src/extension/draft.ts";
 import piContextCompress from "../src/index.ts";
 import {
@@ -36,17 +40,34 @@ import {
 	resetAmbient,
 } from "../src/panel.ts";
 import {
+	type BatchSnapshot,
 	COMPRESSION_ENTRY,
+	COMPRESSION_REQUEST,
+	COMPRESSION_RESULT,
+	COMPRESSION_TAIL,
 	CTREE_CLOSE,
 	CTREE_CROP,
 	CTREE_CROP_TAIL,
 	CTREE_DECISION,
 	CTREE_FORK,
 	CTREE_RANGE_COMPACT,
+	CTREE_RANGE_TAIL,
+	type CompressionDetails,
+	type CompressionRequest,
+	type CompressionResult,
+	LEGACY_COMPRESSION_ENTRY,
+	QUEUED_TASK_TAIL,
 	RANGE_COMPRESSION_REQUEST,
 	RANGE_COMPRESSION_RESULT,
+	type RangeCompressionRequest,
 	type RangeCompressionResult,
+	compressionDetails,
 } from "../src/protocol.ts";
+import {
+	prepareRangeCompression,
+	rangeCompressHandler,
+	registerRangeCompressionService,
+} from "../src/range-compression.ts";
 import { snapshotSession } from "../src/session.ts";
 
 initTheme("dark");
@@ -292,6 +313,164 @@ function durableSequence(session: SessionManager): string[] {
 		.map((entry) => entry.customType);
 }
 
+interface RangeSeed {
+	rootId: string;
+	anchorId: string;
+	startId: string;
+	endId: string;
+	continuationUserId: string;
+	leafId: string;
+}
+
+function seedRange(value: World): RangeSeed {
+	const rootId = value.session.user("root request");
+	const anchorId = value.session.assistant("root answer");
+	const startId = value.session.user("selected question");
+	const endId = value.session.assistant("selected answer");
+	const continuationUserId = value.session.user("continuation question");
+	const leafId = value.session.assistant("continuation answer");
+	return { rootId, anchorId, startId, endId, continuationUserId, leafId };
+}
+
+function candidateFor(value: World, entryId: string) {
+	return rangeCandidates(snapshotSession(value.session.manager)).find((candidate) =>
+		candidate.entryIds.includes(entryId),
+	);
+}
+
+function deferred<T>() {
+	let resolve!: (value: T | PromiseLike<T>) => void;
+	const promise = new Promise<T>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
+
+function sendRangeRequest(value: World, request: RangeCompressionRequest): Promise<RangeCompressionResult> {
+	return new Promise((resolve) => {
+		const unsubscribe = value.pi.events.on(RANGE_COMPRESSION_RESULT, (event) => {
+			const result = event as RangeCompressionResult;
+			if (result.requestId !== request.requestId) return;
+			unsubscribe();
+			resolve(result);
+		});
+		value.pi.events.emit(RANGE_COMPRESSION_REQUEST, { request, context: value.ctx });
+	});
+}
+
+function rangePrepareRequest(
+	value: World,
+	seed: RangeSeed,
+	requestId: string,
+	operationId: string,
+	overrides: Partial<Pick<Extract<RangeCompressionRequest, { action: "prepare" }>, "endEntryId" | "review">> = {},
+): Extract<RangeCompressionRequest, { action: "prepare" }> {
+	return {
+		v: 1,
+		requestId,
+		sessionId: value.session.manager.getSessionId(),
+		operationId,
+		action: "prepare",
+		startEntryId: seed.startId,
+		endEntryId: overrides.endEntryId ?? seed.endId,
+		review: overrides.review ?? false,
+	};
+}
+
+function rangeControlRequest(
+	value: World,
+	requestId: string,
+	operationId: string,
+	action: "apply" | "cancel" | "status",
+): RangeCompressionRequest {
+	const common = {
+		v: 1 as const,
+		requestId,
+		sessionId: value.session.manager.getSessionId(),
+		operationId,
+	};
+	if (action === "apply") return { ...common, action: "apply" };
+	if (action === "cancel") return { ...common, action: "cancel" };
+	return { ...common, action: "status" };
+}
+
+interface BatchSeed {
+	anchorId: string;
+	lastSettledEntryId: string;
+	leafId: string;
+}
+
+const BATCH_SNAPSHOT: BatchSnapshot = {
+	planId: "a".repeat(64),
+	batchId: "b".repeat(64),
+	structuralRevision: "c".repeat(64),
+	fileRevision: "d".repeat(64),
+	bitmap: [false, true],
+};
+
+function seedBatch(value: World): BatchSeed {
+	value.session.user("root request");
+	const anchorId = value.session.assistant("batch anchor");
+	value.session.user("[Queued task]\n\ncomplete the queued work");
+	value.session.assistant("batch execution");
+	const lastSettledEntryId = value.session.assistant("batch settled");
+	return { anchorId, lastSettledEntryId, leafId: lastSettledEntryId };
+}
+
+function batchRequest(
+	value: World,
+	seed: BatchSeed,
+	requestId: string,
+	operationId: string,
+	action: CompressionRequest["action"],
+	batch: BatchSnapshot = BATCH_SNAPSHOT,
+): CompressionRequest {
+	return {
+		v: 1,
+		requestId,
+		sessionId: value.session.manager.getSessionId(),
+		operationId,
+		runId: "run-1",
+		action,
+		batch,
+		...(action === "prepare"
+			? { anchorEntryId: seed.anchorId, lastSettledEntryId: seed.lastSettledEntryId, review: false }
+			: {}),
+	};
+}
+
+function sendBatchRequest(value: World, request: CompressionRequest): Promise<CompressionResult> {
+	return new Promise((resolve) => {
+		const unsubscribe = value.pi.events.on(COMPRESSION_RESULT, (event) => {
+			const result = event as CompressionResult;
+			if (result.requestId !== request.requestId) return;
+			unsubscribe();
+			resolve(result);
+		});
+		value.pi.events.emit(COMPRESSION_REQUEST, { request, context: value.ctx });
+	});
+}
+
+function compressionDetailsFixture(): CompressionDetails {
+	return {
+		v: 2,
+		runId: "run-1",
+		planId: BATCH_SNAPSHOT.planId,
+		batchId: BATCH_SNAPSHOT.batchId,
+		operationId: "operation-1",
+		structuralRevision: BATCH_SNAPSHOT.structuralRevision,
+		fileRevision: BATCH_SNAPSHOT.fileRevision,
+		preCompletionBitmap: [...BATCH_SNAPSHOT.bitmap],
+		sourceLeafId: "source-leaf",
+		preTaskAnchorId: "anchor",
+		taskMessageEntryId: "task",
+		startEntryId: "start",
+		endEntryId: "end",
+		selectedEntryIds: ["start", "end"],
+		sourceSha256: "e".repeat(64),
+	};
+}
+
 async function seedBranch(value: World, name = "feature", model = "cheap-model"): Promise<string> {
 	value.session.user("root");
 	value.session.assistant("plan");
@@ -359,6 +538,597 @@ describe("extension registration and policy", () => {
 			"./range-compression": "./src/range-compression.ts",
 		});
 		expect(manifest.pi.extensions).toEqual(["./src/index.ts"]);
+	});
+});
+
+describe("range safety and rewrite contracts", () => {
+	it("protects root entries and incomplete user turns", () => {
+		const value = world();
+		const rootId = value.session.user("root");
+		value.session.assistant("answer");
+		const incompleteId = value.session.user("unfinished");
+		expect(candidateFor(value, rootId)).toMatchObject({
+			protected: true,
+			protectReason: "no anchor before this message group",
+		});
+		expect(candidateFor(value, incompleteId)).toMatchObject({
+			protected: true,
+			protectReason: "incomplete current user turn",
+		});
+	});
+
+	it("keeps complete assistant tool-call groups atomic and selectable", () => {
+		const value = world();
+		value.session.user("root");
+		value.session.assistant("anchor");
+		const calls: ToolCall[] = [
+			{ type: "toolCall", id: "call-a", name: "read", arguments: { path: "a.ts" } },
+			{ type: "toolCall", id: "call-b", name: "read", arguments: { path: "b.ts" } },
+		];
+		const assistantId = value.session.assistant("", calls);
+		const firstResultId = value.session.manager.appendMessage({
+			role: "toolResult",
+			toolCallId: "call-a",
+			toolName: "read",
+			content: [{ type: "text", text: "a" }],
+			isError: false,
+			timestamp: 10,
+		});
+		const secondResultId = value.session.manager.appendMessage({
+			role: "toolResult",
+			toolCallId: "call-b",
+			toolName: "read",
+			content: [{ type: "text", text: "b" }],
+			isError: false,
+			timestamp: 11,
+		});
+		const candidate = candidateFor(value, assistantId);
+		expect(candidate).toMatchObject({
+			startEntryId: assistantId,
+			endEntryId: secondResultId,
+			protected: false,
+		});
+		expect(candidate?.entryIds).toEqual([assistantId, firstResultId, secondResultId]);
+	});
+
+	it.each([
+		["missing", undefined],
+		["mismatched", "wrong-call"],
+	] as const)("protects %s assistant tool-call groups", (_name, resultCallId) => {
+		const value = world();
+		value.session.user("root");
+		value.session.assistant("anchor");
+		const assistantId = value.session.assistant("", [
+			{ type: "toolCall", id: "expected-call", name: "read", arguments: { path: "a.ts" } },
+		]);
+		if (resultCallId) {
+			value.session.manager.appendMessage({
+				role: "toolResult",
+				toolCallId: resultCallId,
+				toolName: "read",
+				content: [{ type: "text", text: "wrong" }],
+				isError: false,
+				timestamp: 12,
+			});
+		}
+		expect(candidateFor(value, assistantId)).toMatchObject({
+			protected: true,
+			protectReason: "incomplete assistant tool-call group",
+		});
+	});
+
+	it("protects standalone tool results and decision records", () => {
+		const value = world();
+		value.session.user("root");
+		value.session.assistant("anchor");
+		const toolResultId = value.session.manager.appendMessage({
+			role: "toolResult",
+			toolCallId: "orphan",
+			toolName: "read",
+			content: [{ type: "text", text: "orphan" }],
+			isError: false,
+			timestamp: 13,
+		});
+		const decisionId = value.session.manager.appendCustomMessageEntry(CTREE_DECISION, "decision", true, {
+			v: 1,
+			forkEntryId: "fork",
+			branchName: "choice",
+		});
+		expect(candidateFor(value, toolResultId)).toMatchObject({
+			protected: true,
+			protectReason: "tool result without its assistant tool call",
+		});
+		expect(candidateFor(value, decisionId)).toMatchObject({
+			protected: true,
+			protectReason: "decision record",
+		});
+	});
+
+	it("protects branch summaries, compaction summaries, and context-inert metadata", () => {
+		const branchValue = world();
+		branchValue.session.user("root");
+		const branchAnchor = branchValue.session.assistant("anchor");
+		const branchSummaryId = branchValue.session.manager.branchWithSummary(branchAnchor, "branch summary");
+		expect(candidateFor(branchValue, branchSummaryId)).toMatchObject({
+			protected: true,
+			protectReason: "structural context entry",
+		});
+
+		const compactValue = world();
+		compactValue.session.user("root");
+		compactValue.session.assistant("anchor");
+		const keptId = compactValue.session.user("kept");
+		compactValue.session.assistant("kept answer");
+		const compactionId = compactValue.session.manager.appendCompaction("compact summary", keptId, 100);
+		expect(candidateFor(compactValue, compactionId)).toMatchObject({
+			protected: true,
+			protectReason: "structural context entry",
+		});
+
+		const metadataValue = world();
+		metadataValue.session.user("root");
+		const targetId = metadataValue.session.assistant("anchor");
+		const metadataIds = [
+			metadataValue.session.manager.appendCustomEntry("test/state", { value: 1 }),
+			metadataValue.session.manager.appendModelChange("openai", "cheap-model"),
+			metadataValue.session.manager.appendThinkingLevelChange("high"),
+			metadataValue.session.manager.appendLabelChange(targetId, "target"),
+			metadataValue.session.manager.appendSessionInfo("session"),
+		];
+		for (const entryId of metadataIds) {
+			expect(candidateFor(metadataValue, entryId)).toMatchObject({
+				protected: true,
+				protectReason: "context-inert session metadata",
+			});
+		}
+	});
+
+	it("plans selected and continuation IDs, source text, token estimates, and source hashes", () => {
+		const value = world();
+		const seed = seedRange(value);
+		const snapshot = snapshotSession(value.session.manager);
+		const plan = prepareRewrite(snapshot, seed.startId, seed.endId);
+		const expectedSource = "user: selected question\n\nassistant: selected answer";
+		expect(plan.anchorId).toBe(seed.anchorId);
+		expect(plan.selectedEntryIds).toEqual([seed.startId, seed.endId]);
+		expect(plan.continuationEntryIds).toEqual([seed.continuationUserId, seed.leafId]);
+		expect(plan.source).toBe(expectedSource);
+		expect(plan.continuationSerialized).toBe("user: continuation question\n\nassistant: continuation answer");
+		expect(plan.selectedEstTokens).toBe(
+			plan.selectedEntries.reduce((total, entry) => total + estimateEntryTokens(entry), 0),
+		);
+		expect(plan.sourceSha256).toBe(createHash("sha256").update(expectedSource).digest("hex"));
+	});
+
+	it("rejects session, leaf, anchor, selected-source, and continuation changes", () => {
+		const sessionChanged = world();
+		const sessionSeed = seedRange(sessionChanged);
+		const sessionPlan = prepareRewrite(
+			snapshotSession(sessionChanged.session.manager),
+			sessionSeed.startId,
+			sessionSeed.endId,
+		);
+		expect(() => revalidateRewrite(world().ctx, sessionPlan)).toThrow("session changed");
+
+		const leafChanged = world();
+		const leafSeed = seedRange(leafChanged);
+		const leafPlan = prepareRewrite(snapshotSession(leafChanged.session.manager), leafSeed.startId, leafSeed.endId);
+		leafChanged.session.user("new leaf");
+		expect(() => revalidateRewrite(leafChanged.ctx, leafPlan)).toThrow("leaf changed");
+
+		const anchorMissing = world();
+		const anchorSeed = seedRange(anchorMissing);
+		const anchorPlan = prepareRewrite(
+			snapshotSession(anchorMissing.session.manager),
+			anchorSeed.startId,
+			anchorSeed.endId,
+		);
+		expect(() => revalidateRewrite(anchorMissing.ctx, { ...anchorPlan, anchorId: "missing-anchor" })).toThrow(
+			"anchor is no longer available",
+		);
+
+		const sourceChanged = world();
+		const sourceSeed = seedRange(sourceChanged);
+		const sourcePlan = prepareRewrite(
+			snapshotSession(sourceChanged.session.manager),
+			sourceSeed.startId,
+			sourceSeed.endId,
+		);
+		const sourceEntry = sourceChanged.session.manager.getEntry(sourceSeed.startId);
+		if (!sourceEntry || sourceEntry.type !== "message" || sourceEntry.message.role !== "user") {
+			throw new Error("selected source fixture is invalid");
+		}
+		sourceEntry.message.content = "changed selected question";
+		expect(() => revalidateRewrite(sourceChanged.ctx, sourcePlan)).toThrow("source changed");
+
+		const continuationChanged = world();
+		const continuationSeed = seedRange(continuationChanged);
+		const continuationPlan = prepareRewrite(
+			snapshotSession(continuationChanged.session.manager),
+			continuationSeed.startId,
+			continuationSeed.endId,
+		);
+		const continuationLeaf = continuationChanged.session.manager.getEntry(continuationSeed.leafId);
+		if (!continuationLeaf) throw new Error("continuation fixture is invalid");
+		continuationLeaf.parentId = continuationSeed.endId;
+		expect(() => revalidateRewrite(continuationChanged.ctx, continuationPlan)).toThrow("source changed");
+	});
+
+	it("applies rewrites by branching and keeps the original source leaf recoverable", async () => {
+		const value = world();
+		const seed = seedRange(value);
+		const plan = prepareRewrite(snapshotSession(value.session.manager), seed.startId, seed.endId);
+		const countBefore = value.session.manager.getEntries().length;
+		const result = await applyRewrite(value.pi, value.ctx, plan, {
+			messages: [{ customType: "test/tail", content: "replacement", display: true }],
+			marker: { customType: "test/marker", data: { sourceLeafId: seed.leafId } },
+		});
+		expect(result.applied).toBe(true);
+		expect(value.session.manager.getEntries()).toHaveLength(countBefore + 2);
+		expect(durableSequence(value.session.manager)).toEqual(["test/tail", "test/marker"]);
+		const originalBranchIds = value.session.manager.getBranch(seed.leafId).map((entry) => entry.id);
+		expect(originalBranchIds).toEqual(expect.arrayContaining([...plan.selectedEntryIds, ...plan.continuationEntryIds]));
+		for (const entryId of [...plan.selectedEntryIds, ...plan.continuationEntryIds]) {
+			expect(value.session.manager.getEntry(entryId)).toBeDefined();
+		}
+	});
+
+	it("writes nothing when rewrite navigation is cancelled", async () => {
+		const value = world();
+		const seed = seedRange(value);
+		const plan = prepareRewrite(snapshotSession(value.session.manager), seed.startId, seed.endId);
+		const entriesBefore = value.session.manager.getEntries();
+		(value.ctx as unknown as { navigateTree: ExtensionCommandContext["navigateTree"] }).navigateTree = async () => ({
+			cancelled: true,
+		});
+		const result = await applyRewrite(value.pi, value.ctx, plan, {
+			messages: [{ customType: "test/tail", content: "replacement", display: true }],
+			marker: { customType: "test/marker", data: {} },
+		});
+		expect(result.applied).toBe(false);
+		expect(value.session.manager.getEntries()).toEqual(entriesBefore);
+		expect(value.session.manager.getLeafId()).toBe(seed.leafId);
+	});
+});
+
+describe("range compression protocol", () => {
+	it("keeps prepare, duplicate, conflict, status, apply, and repeated-apply behavior", async () => {
+		const value = world();
+		const seed = seedRange(value);
+		registerRangeCompressionService(value.pi);
+		const operationId = "range-main";
+		expect(
+			await sendRangeRequest(value, rangeControlRequest(value, "status-before", operationId, "status")),
+		).toMatchObject({
+			status: "missing",
+		});
+		expect(
+			await sendRangeRequest(value, rangeControlRequest(value, "apply-before", operationId, "apply")),
+		).toMatchObject({
+			status: "failed",
+			code: "not_prepared",
+		});
+		const prepare = rangePrepareRequest(value, seed, "prepare", operationId);
+		expect(await sendRangeRequest(value, prepare)).toMatchObject({ status: "prepared" });
+		expect(await sendRangeRequest(value, { ...prepare, requestId: "prepare-duplicate" })).toMatchObject({
+			status: "prepared",
+		});
+		expect(
+			await sendRangeRequest(
+				value,
+				rangePrepareRequest(value, seed, "prepare-conflict", operationId, { review: true }),
+			),
+		).toMatchObject({ status: "failed", code: "operation_conflict" });
+		expect(
+			await sendRangeRequest(value, rangeControlRequest(value, "status-after", operationId, "status")),
+		).toMatchObject({
+			status: "prepared",
+		});
+		const applied = await sendRangeRequest(value, rangeControlRequest(value, "apply", operationId, "apply"));
+		expect(applied).toMatchObject({ status: "applied" });
+		expect(durableSequence(value.session.manager)).toEqual([CTREE_RANGE_TAIL, CTREE_RANGE_COMPACT]);
+		expect(value.session.manager.getBranch(seed.leafId).map((entry) => entry.id)).toContain(seed.endId);
+		const repeated = await sendRangeRequest(value, rangeControlRequest(value, "apply-repeat", operationId, "apply"));
+		expect(repeated).toMatchObject({ status: "applied" });
+		expect(durableSequence(value.session.manager)).toEqual([CTREE_RANGE_TAIL, CTREE_RANGE_COMPACT]);
+	});
+
+	it("deduplicates an in-flight prepare and reports conflicts and busy actions", async () => {
+		const value = world();
+		const seed = seedRange(value);
+		const started = deferred<void>();
+		const release = deferred<AssistantMessage>();
+		(value.ctx.modelRegistry as unknown as { complete: (...args: unknown[]) => Promise<AssistantMessage> }).complete =
+			async () => {
+				started.resolve(undefined);
+				return release.promise;
+			};
+		registerRangeCompressionService(value.pi);
+		const operationId = "range-pending";
+		const prepare = rangePrepareRequest(value, seed, "pending-first", operationId);
+		const first = sendRangeRequest(value, prepare);
+		await started.promise;
+		const duplicate = sendRangeRequest(value, { ...prepare, requestId: "pending-duplicate" });
+		expect(
+			await sendRangeRequest(
+				value,
+				rangePrepareRequest(value, seed, "pending-conflict", operationId, { review: true }),
+			),
+		).toMatchObject({ status: "failed", code: "operation_conflict" });
+		expect(
+			await sendRangeRequest(value, rangeControlRequest(value, "pending-apply", operationId, "apply")),
+		).toMatchObject({
+			status: "failed",
+			code: "busy",
+		});
+		release.resolve(assistantResponse("range summary"));
+		expect(await first).toMatchObject({ status: "prepared" });
+		expect(await duplicate).toMatchObject({ status: "prepared" });
+	});
+
+	it("cancels absent, preparing, and prepared operations, including the model signal", async () => {
+		const absent = world();
+		seedRange(absent);
+		registerRangeCompressionService(absent.pi);
+		expect(
+			await sendRangeRequest(absent, rangeControlRequest(absent, "cancel-absent", "range-absent", "cancel")),
+		).toMatchObject({ status: "cancelled" });
+
+		const preparing = world();
+		const preparingSeed = seedRange(preparing);
+		const started = deferred<void>();
+		let modelSignal: AbortSignal | undefined;
+		(
+			preparing.ctx.modelRegistry as unknown as {
+				complete: (...args: unknown[]) => Promise<AssistantMessage>;
+			}
+		).complete = async (...args: unknown[]) => {
+			const options = args[2] as { signal?: AbortSignal } | undefined;
+			if (!options?.signal) throw new Error("range preparation did not provide an abort signal");
+			modelSignal = options.signal;
+			started.resolve(undefined);
+			return new Promise<AssistantMessage>((_resolve, reject) => {
+				const abort = () => {
+					const error = new Error("cancelled");
+					error.name = "AbortError";
+					reject(error);
+				};
+				if (options.signal?.aborted) abort();
+				else options.signal?.addEventListener("abort", abort, { once: true });
+			});
+		};
+		registerRangeCompressionService(preparing.pi);
+		const preparingOperation = "range-preparing";
+		const prepareResult = sendRangeRequest(
+			preparing,
+			rangePrepareRequest(preparing, preparingSeed, "cancel-preparing-prepare", preparingOperation),
+		);
+		await started.promise;
+		expect(
+			await sendRangeRequest(
+				preparing,
+				rangeControlRequest(preparing, "cancel-preparing", preparingOperation, "cancel"),
+			),
+		).toMatchObject({ status: "cancelled" });
+		expect(modelSignal?.aborted).toBe(true);
+		expect(await prepareResult).toMatchObject({ status: "cancelled" });
+
+		const prepared = world();
+		const preparedSeed = seedRange(prepared);
+		registerRangeCompressionService(prepared.pi);
+		const preparedOperation = "range-prepared";
+		await sendRangeRequest(
+			prepared,
+			rangePrepareRequest(prepared, preparedSeed, "cancel-prepared-prepare", preparedOperation),
+		);
+		expect(
+			await sendRangeRequest(prepared, rangeControlRequest(prepared, "cancel-prepared", preparedOperation, "cancel")),
+		).toMatchObject({ status: "cancelled" });
+		expect(
+			await sendRangeRequest(prepared, rangeControlRequest(prepared, "cancelled-status", preparedOperation, "status")),
+		).toMatchObject({ status: "cancelled" });
+	});
+
+	it("keeps apply non-interruptible and reports session changes", async () => {
+		const value = world();
+		const seed = seedRange(value);
+		registerRangeCompressionService(value.pi);
+		const operationId = "range-applying";
+		await sendRangeRequest(value, rangePrepareRequest(value, seed, "applying-prepare", operationId));
+		const enteredNavigation = deferred<void>();
+		const releaseNavigation = deferred<void>();
+		(value.ctx as unknown as { navigateTree: ExtensionCommandContext["navigateTree"] }).navigateTree = async (
+			entryId,
+			options,
+		) => {
+			value.navigations.push({ entryId, summarize: options?.summarize });
+			enteredNavigation.resolve(undefined);
+			await releaseNavigation.promise;
+			value.session.manager.branch(entryId);
+			return { cancelled: false };
+		};
+		const applying = sendRangeRequest(value, rangeControlRequest(value, "applying-apply", operationId, "apply"));
+		await enteredNavigation.promise;
+		expect(
+			await sendRangeRequest(value, rangeControlRequest(value, "applying-cancel", operationId, "cancel")),
+		).toMatchObject({ status: "failed", code: "busy" });
+		releaseNavigation.resolve(undefined);
+		expect(await applying).toMatchObject({ status: "applied" });
+
+		const wrongSession = rangeControlRequest(value, "wrong-session", "wrong-session-operation", "status");
+		wrongSession.sessionId = "different-session";
+		expect(await sendRangeRequest(value, wrongSession)).toMatchObject({
+			status: "failed",
+			code: "session_changed",
+		});
+	});
+});
+
+describe("batch compression protocol", () => {
+	it("keeps prepare, duplicate, conflict, status, apply, and repeated-apply behavior", async () => {
+		const value = world();
+		const seed = seedBatch(value);
+		registerBatchCompression(value.pi);
+		const operationId = "batch-main";
+		expect(
+			await sendBatchRequest(value, batchRequest(value, seed, "batch-status-before", operationId, "status")),
+		).toMatchObject({
+			status: "missing",
+		});
+		expect(
+			await sendBatchRequest(value, batchRequest(value, seed, "batch-apply-before", operationId, "apply")),
+		).toMatchObject({
+			status: "failed",
+			code: "not_prepared",
+		});
+		const prepare = batchRequest(value, seed, "batch-prepare", operationId, "prepare");
+		expect(await sendBatchRequest(value, prepare)).toMatchObject({ status: "prepared" });
+		expect(await sendBatchRequest(value, { ...prepare, requestId: "batch-prepare-duplicate" })).toMatchObject({
+			status: "prepared",
+		});
+		expect(
+			await sendBatchRequest(value, {
+				...prepare,
+				requestId: "batch-prepare-conflict",
+				batch: { ...BATCH_SNAPSHOT, bitmap: [true, true] },
+			}),
+		).toMatchObject({ status: "failed", code: "operation_conflict" });
+		expect(
+			await sendBatchRequest(value, batchRequest(value, seed, "batch-status-after", operationId, "status")),
+		).toMatchObject({
+			status: "prepared",
+		});
+		expect(await sendBatchRequest(value, batchRequest(value, seed, "batch-apply", operationId, "apply"))).toMatchObject(
+			{
+				status: "applied",
+			},
+		);
+		expect(durableSequence(value.session.manager)).toEqual([QUEUED_TASK_TAIL, COMPRESSION_TAIL, COMPRESSION_ENTRY]);
+		expect(value.session.manager.getBranch(seed.leafId).map((entry) => entry.id)).toContain(seed.lastSettledEntryId);
+		expect(
+			await sendBatchRequest(value, batchRequest(value, seed, "batch-apply-repeat", operationId, "apply")),
+		).toMatchObject({ status: "applied" });
+		expect(durableSequence(value.session.manager)).toEqual([QUEUED_TASK_TAIL, COMPRESSION_TAIL, COMPRESSION_ENTRY]);
+	});
+
+	it("deduplicates an in-flight prepare and reports busy actions", async () => {
+		const value = world();
+		const seed = seedBatch(value);
+		const started = deferred<void>();
+		const release = deferred<AssistantMessage>();
+		(value.ctx.modelRegistry as unknown as { complete: (...args: unknown[]) => Promise<AssistantMessage> }).complete =
+			async () => {
+				started.resolve(undefined);
+				return release.promise;
+			};
+		registerBatchCompression(value.pi);
+		const operationId = "batch-pending";
+		const prepare = batchRequest(value, seed, "batch-pending-first", operationId, "prepare");
+		const first = sendBatchRequest(value, prepare);
+		await started.promise;
+		const duplicate = sendBatchRequest(value, { ...prepare, requestId: "batch-pending-duplicate" });
+		expect(
+			await sendBatchRequest(value, batchRequest(value, seed, "batch-pending-apply", operationId, "apply")),
+		).toMatchObject({ status: "failed", code: "busy" });
+		release.resolve(assistantResponse("batch summary"));
+		expect(await first).toMatchObject({ status: "prepared" });
+		expect(await duplicate).toMatchObject({ status: "prepared" });
+	});
+
+	it("cancels absent, preparing, and prepared operations", async () => {
+		const absent = world();
+		const absentSeed = seedBatch(absent);
+		registerBatchCompression(absent.pi);
+		expect(
+			await sendBatchRequest(absent, batchRequest(absent, absentSeed, "batch-cancel-absent", "batch-absent", "cancel")),
+		).toMatchObject({ status: "cancelled" });
+
+		const preparing = world();
+		const preparingSeed = seedBatch(preparing);
+		const started = deferred<void>();
+		const release = deferred<AssistantMessage>();
+		(
+			preparing.ctx.modelRegistry as unknown as {
+				complete: (...args: unknown[]) => Promise<AssistantMessage>;
+			}
+		).complete = async () => {
+			started.resolve(undefined);
+			return release.promise;
+		};
+		registerBatchCompression(preparing.pi);
+		const preparingOperation = "batch-preparing";
+		const prepareResult = sendBatchRequest(
+			preparing,
+			batchRequest(preparing, preparingSeed, "batch-cancel-preparing-prepare", preparingOperation, "prepare"),
+		);
+		await started.promise;
+		expect(
+			await sendBatchRequest(
+				preparing,
+				batchRequest(preparing, preparingSeed, "batch-cancel-preparing", preparingOperation, "cancel"),
+			),
+		).toMatchObject({ status: "cancelled" });
+		release.resolve(assistantResponse("unused summary"));
+		expect(await prepareResult).toMatchObject({ status: "cancelled" });
+
+		const prepared = world();
+		const preparedSeed = seedBatch(prepared);
+		registerBatchCompression(prepared.pi);
+		const preparedOperation = "batch-prepared";
+		await sendBatchRequest(
+			prepared,
+			batchRequest(prepared, preparedSeed, "batch-cancel-prepared-prepare", preparedOperation, "prepare"),
+		);
+		expect(
+			await sendBatchRequest(
+				prepared,
+				batchRequest(prepared, preparedSeed, "batch-cancel-prepared", preparedOperation, "cancel"),
+			),
+		).toMatchObject({ status: "cancelled" });
+	});
+
+	it("keeps apply non-interruptible and reports session changes", async () => {
+		const value = world();
+		const seed = seedBatch(value);
+		registerBatchCompression(value.pi);
+		const operationId = "batch-applying";
+		await sendBatchRequest(value, batchRequest(value, seed, "batch-applying-prepare", operationId, "prepare"));
+		const enteredNavigation = deferred<void>();
+		const releaseNavigation = deferred<void>();
+		(value.ctx as unknown as { navigateTree: ExtensionCommandContext["navigateTree"] }).navigateTree = async (
+			entryId,
+			options,
+		) => {
+			value.navigations.push({ entryId, summarize: options?.summarize });
+			enteredNavigation.resolve(undefined);
+			await releaseNavigation.promise;
+			value.session.manager.branch(entryId);
+			return { cancelled: false };
+		};
+		const applying = sendBatchRequest(value, batchRequest(value, seed, "batch-applying-apply", operationId, "apply"));
+		await enteredNavigation.promise;
+		expect(
+			await sendBatchRequest(value, batchRequest(value, seed, "batch-applying-cancel", operationId, "cancel")),
+		).toMatchObject({ status: "failed", code: "busy" });
+		releaseNavigation.resolve(undefined);
+		expect(await applying).toMatchObject({ status: "applied" });
+
+		const wrongSession = batchRequest(value, seed, "batch-wrong-session", "batch-wrong", "status");
+		wrongSession.sessionId = "different-session";
+		expect(await sendBatchRequest(value, wrongSession)).toMatchObject({
+			status: "failed",
+			code: "session_changed",
+		});
+	});
+
+	it("parses legacy workstream compression markers", () => {
+		const value = world();
+		value.session.user("root");
+		const details = compressionDetailsFixture();
+		const markerId = value.session.manager.appendCustomEntry(LEGACY_COMPRESSION_ENTRY, details);
+		const marker = value.session.manager.getEntry(markerId);
+		if (!marker) throw new Error("legacy marker fixture is invalid");
+		expect(compressionDetails(marker)).toEqual(details);
 	});
 });
 
@@ -476,6 +1246,31 @@ describe("crop command and inline recovery sequence", () => {
 		if (dryRun) expect(sequence).toEqual([]);
 		else expect(sequence).toEqual([CTREE_CROP_TAIL, CTREE_CROP]);
 	});
+
+	it("requires a second mark before cropping the latest protected tool result", () => {
+		const value = world();
+		value.session.user("root");
+		value.session.assistant("anchor");
+		const result = value.session.toolUse("read", { path: "latest.ts" }, "latest result");
+		const notices: string[] = [];
+		const actions: unknown[] = [];
+		const panel = new ContextPanel({
+			input: { ...buildPanelInput(value.pi, value.ctx), initialView: "crop" },
+			tui: { requestRender: () => {} } as never,
+			theme: value.ui.theme as never,
+			onAction: (action) => actions.push(action),
+			onNotify: (message) => notices.push(message),
+			maxBody: 12,
+		});
+		panel.handleInput(" ");
+		expect(panel.controller.marks.has(result.result)).toBe(false);
+		expect(notices.at(-1)).toContain("space again");
+		panel.handleInput(" ");
+		expect(panel.controller.marks.has(result.result)).toBe(true);
+		panel.handleInput("\r");
+		expect(actions).toHaveLength(1);
+		expect(actions[0]).toMatchObject({ type: "crop-apply" });
+	});
 });
 
 describe("append-only undo", () => {
@@ -549,6 +1344,41 @@ describe("decision text", () => {
 });
 
 describe("ambient and panel behavior", () => {
+	it("requires range-summary review and rejects /compress outside the TUI", async () => {
+		const interactive = world();
+		const seed = seedRange(interactive);
+		const prepared = await prepareRangeCompression(interactive.ctx, {
+			operationId: "manual-review",
+			startEntryId: seed.startId,
+			endEntryId: seed.endId,
+		});
+		const customResults: unknown[] = [seed.startId, seed.endId, { status: "prepared", prepared }];
+		interactive.ui.custom = async <T>() => customResults.shift() as T;
+		await rangeCompressHandler(interactive.pi, interactive.ctx, "");
+		expect(durableSequence(interactive.session.manager)).toEqual([]);
+		expect(interactive.ui.notifications.at(-1)?.message).toContain("cancelled during summary review");
+
+		const headless = world();
+		seedRange(headless);
+		(headless.ctx as unknown as { mode: string }).mode = "print";
+		await rangeCompressHandler(headless.pi, headless.ctx, "");
+		expect(headless.ui.notifications.at(-1)?.message).toContain("interactive TUI");
+		expect(durableSequence(headless.session.manager)).toEqual([]);
+	});
+
+	it("opens the panel from Ctrl+Q", async () => {
+		const value = world();
+		value.session.user("root");
+		const optionsSeen: unknown[] = [];
+		value.ui.custom = async <T>(_factory: unknown, options?: unknown): Promise<T> => {
+			optionsSeen.push(options);
+			return { type: "close" } as T;
+		};
+		registerPanel(value.pi, deps);
+		await value.shortcuts.get("ctrl+q")?.(value.ctx);
+		expect(optionsSeen).toEqual([{ overlay: true, overlayOptions: { anchor: "center", width: "100%" } }]);
+	});
+
 	it("keeps status, title, gauge, trend, red warning, and compact warning", () => {
 		const value = world();
 		value.session.user("root");
