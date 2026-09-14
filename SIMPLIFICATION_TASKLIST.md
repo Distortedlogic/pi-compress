@@ -419,18 +419,18 @@ interface ForkInfo {
 
 **Files:** `src/panel.ts`, related existing tests
 
-- [ ] Change `buildPanelInput(pi, ctx, ...)` to `buildPanelInput(ctx, ...)`.
-- [ ] Read the session name from `ctx.sessionManager.getSessionName()`.
-- [ ] Change `openPanel(pi, ctx, ...)` to `openPanel(ctx, ...)`.
-- [ ] Dispatch `/panel` from the `Ctrl+Q` shortcut with:
+- [x] Change `buildPanelInput(pi, ctx, ...)` to `buildPanelInput(ctx, ...)`.
+- [x] Read the session name from `ctx.sessionManager.getSessionName()`.
+- [x] Change `openPanel(pi, ctx, ...)` to `openPanel(ctx, ...)`.
+- [x] Dispatch `/panel` from the `Ctrl+Q` shortcut with:
 
 ```ts
 pi.sendUserMessage("/panel", { expandPromptTemplates: true });
 ```
 
-- [ ] Confirm that Pi handles the extension command without starting an LLM turn.
-- [ ] Remove the shortcut-only read-only panel path.
-- [ ] Delete:
+- [x] Confirm that Pi handles the extension command without starting an LLM turn.
+- [x] Remove the shortcut-only read-only panel path.
+- [x] Delete:
   - `PanelInput.readOnly`
   - `PanelOpenOptions.readOnly`
   - `PanelHeader.readOnly`
@@ -438,24 +438,24 @@ pi.sendUserMessage("/panel", { expandPromptTemplates: true });
   - Read-only guards and labels.
   - `isCommandContext()`.
   - The warning that asks the user to reopen `/panel`.
-- [ ] Remove `PanelHeader` and `panelHeader()`.
-- [ ] Compute the required project, session, branch, model, token, and window values directly in `render()`.
-- [ ] Remove unused `pct`, `band`, and `estimated` header values.
-- [ ] Use Pi's `getSettingsListTheme()` instead of the custom `settingsTheme()` function.
-- [ ] Keep the custom selection theme unless the installed Pi API provides an equivalent public helper.
-- [ ] Replace the 50-iteration panel loop with a loop that ends only on close or no action.
-- [ ] Keep `PanelController` during the behavior changes.
-- [ ] After tests pass, fold `PanelController` into `ContextPanel` only if the final diff removes code without making `ContextPanel` methods less clear. Otherwise, make `PanelController` internal and keep it.
-- [ ] Keep native `TreeSelectorComponent`, `SettingsList`, `SelectList`, `BorderedLoader`, and `Markdown` use.
+- [x] Remove `PanelHeader` and `panelHeader()`.
+- [x] Compute the required project, session, branch, model, token, and window values directly in `render()`.
+- [x] Remove unused `pct`, `band`, and `estimated` header values.
+- [x] Use Pi's `getSettingsListTheme()` instead of the custom `settingsTheme()` function.
+- [x] Keep the custom selection theme unless the installed Pi API provides an equivalent public helper.
+- [x] Replace the 50-iteration panel loop with a loop that ends only on close or no action.
+- [x] Keep `PanelController` during the behavior changes.
+- [x] After tests pass, fold `PanelController` into `ContextPanel` only if the final diff removes code without making `ContextPanel` methods less clear. Otherwise, make `PanelController` internal and keep it.
+- [x] Keep native `TreeSelectorComponent`, `SettingsList`, `SelectList`, `BorderedLoader`, and `Markdown` use.
 
 ### Acceptance gate
 
-- [ ] Ctrl+Q opens a fully actionable panel.
-- [ ] Ctrl+Q does not submit a model prompt.
-- [ ] All panel views and actions remain available.
-- [ ] The panel has no arbitrary action limit.
-- [ ] No read-only-only code remains unless another actual package entry uses it.
-- [ ] `npm test`, `npm run check`, and `npm run knip` pass.
+- [x] Ctrl+Q opens a fully actionable panel.
+- [x] Ctrl+Q does not submit a model prompt.
+- [x] All panel views and actions remain available.
+- [x] The panel has no arbitrary action limit.
+- [x] No read-only-only code remains unless another actual package entry uses it.
+- [x] `npm test`, `npm run check`, and `npm run knip` pass.
 
 ---
 

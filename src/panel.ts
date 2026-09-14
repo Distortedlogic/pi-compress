@@ -7,6 +7,7 @@ import {
 	type SessionEntry,
 	TreeSelectorComponent,
 	getMarkdownTheme,
+	getSettingsListTheme,
 } from "@earendil-works/pi-coding-agent";
 import {
 	type Component,
@@ -25,11 +26,9 @@ import parseArgs from "yargs-parser";
 import { renderGauge } from "./ambient.ts";
 import { branchHandler, exportDecisions, mergeHandler, notifyDecisions, parseDecisionArgs } from "./branches.ts";
 import {
-	type Band,
 	type ForkInfo,
 	type SessionSnapshot,
 	aggregateConsumers,
-	band,
 	decisionsOnPath,
 	deriveState,
 	estimateEntryTokens,
@@ -68,7 +67,6 @@ export interface PanelInput extends SessionSnapshot {
 	model?: string;
 	contextWindow?: number;
 	usageTokens?: number | null;
-	readOnly?: boolean;
 	dryRun?: boolean;
 	initialView?: PanelView;
 	premark?: string[];
@@ -98,24 +96,10 @@ const CROP_ARGUMENT_CONFIGURATION = {
 	"unknown-options-as-args": true,
 } as const;
 
-interface PanelHeader {
-	project: string;
-	sessionName?: string;
-	branchName: string;
-	model?: string;
-	view: PanelView;
-	tokens: number | null;
-	window?: number;
-	pct?: number;
-	band?: Band;
-	readOnly: boolean;
-}
-
 export interface PanelOpenOptions {
 	initialView?: PanelView;
 	premark?: string[];
 	dryRun?: boolean;
-	readOnly?: boolean;
 }
 
 export interface ContextPanelOptions {
@@ -127,26 +111,7 @@ export interface ContextPanelOptions {
 	maxBody?: number;
 }
 
-function panelHeader(input: PanelInput, view: PanelView): PanelHeader {
-	const currentFork = nearestOpenFork(input.branch, input.forks);
-	const tokens = input.usageTokens ?? null;
-	const window = input.contextWindow;
-	const pct = tokens !== null && window && window > 0 ? (tokens / window) * 100 : undefined;
-	return {
-		project: input.project,
-		sessionName: input.sessionName,
-		branchName: currentFork?.data.name ?? "trunk",
-		model: input.model,
-		view,
-		tokens,
-		window,
-		pct,
-		band: pct === undefined ? undefined : band(pct),
-		readOnly: input.readOnly ?? false,
-	};
-}
-
-export class PanelController {
+class PanelController {
 	view: PanelView;
 	cropMode: "result" | "turn" = "result";
 	readonly marks = new Set<string>();
@@ -212,17 +177,6 @@ export class PanelController {
 	}
 }
 
-function settingsTheme(theme: PiTheme) {
-	return {
-		label: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : theme.fg("text", text)),
-		value: (text: string, selected: boolean) =>
-			selected ? theme.fg("accent", text) : text === "crop" ? theme.fg("error", text) : theme.fg("muted", text),
-		description: (text: string) => theme.fg("dim", text),
-		cursor: theme.fg("accent", "→ "),
-		hint: (text: string) => theme.fg("dim", text),
-	};
-}
-
 function selectTheme(theme: PiTheme) {
 	return {
 		selectedPrefix: (text: string) => theme.fg("accent", text),
@@ -271,15 +225,7 @@ export class ContextPanel {
 		this.opts.tui.requestRender();
 	}
 
-	private deny(): void {
-		this.notify("read-only (standalone pitree) — open the panel inside pi to act");
-	}
-
 	private act(action: PanelAction): void {
-		if (this.opts.input.readOnly && action.type !== "close") {
-			this.deny();
-			return;
-		}
 		this.opts.onAction(action);
 	}
 
@@ -313,20 +259,15 @@ export class ContextPanel {
 				description: candidate.protected
 					? "Latest result for this tool. Select crop twice to override protection."
 					: undefined,
-				currentValue: this.opts.input.readOnly ? "read-only" : currentValue,
-				values: this.opts.input.readOnly
-					? ["read-only"]
-					: candidate.protected
-						? ["protected", "crop"]
-						: ["keep", "crop"],
+				currentValue,
+				values: candidate.protected ? ["protected", "crop"] : ["keep", "crop"],
 			};
 		});
 		const list = new SettingsList(
 			items,
 			this.opts.maxBody ?? 26,
-			settingsTheme(this.opts.theme),
+			getSettingsListTheme(),
 			(id, value) => {
-				if (this.opts.input.readOnly) return this.deny();
 				const candidate = candidates.find((item) => item.entryId === id);
 				if (!candidate) return;
 				if (candidate.protected && value === "crop" && this.controller.armedId !== id) {
@@ -356,22 +297,15 @@ export class ContextPanel {
 				id: turn.userId,
 				label: `● user: ${turn.label} · ${turn.entryIds.length} entries · ~${fmtTokens(turn.estTokens)}`,
 				description: isProtected ? "The current turn cannot be removed." : undefined,
-				currentValue: this.opts.input.readOnly
-					? "read-only"
-					: this.controller.turnMarks.has(turn.userId)
-						? "drop"
-						: isProtected
-							? "protected"
-							: "keep",
-				values: this.opts.input.readOnly ? ["read-only"] : isProtected ? ["protected"] : ["keep", "drop"],
+				currentValue: this.controller.turnMarks.has(turn.userId) ? "drop" : isProtected ? "protected" : "keep",
+				values: isProtected ? ["protected"] : ["keep", "drop"],
 			};
 		});
 		const list = new SettingsList(
 			items,
 			this.opts.maxBody ?? 26,
-			settingsTheme(this.opts.theme),
+			getSettingsListTheme(),
 			(id, value) => {
-				if (this.opts.input.readOnly) return this.deny();
 				if (id === protectedId) {
 					list.updateValue(id, "protected");
 					this.notify("that's the current turn (you're in it) — can't remove it");
@@ -498,10 +432,6 @@ export class ContextPanel {
 	}
 
 	private applyCrop(): void {
-		if (this.opts.input.readOnly) {
-			this.deny();
-			return;
-		}
 		try {
 			if (this.controller.cropMode === "turn") {
 				if (this.controller.turnMarks.size === 0) {
@@ -581,10 +511,6 @@ export class ContextPanel {
 				return;
 			}
 			if (data === "a" && this.controller.cropMode === "result") {
-				if (this.opts.input.readOnly) {
-					this.deny();
-					return;
-				}
 				const ids = autoSelect(cropCandidates(this.opts.input), {});
 				for (const id of ids) {
 					this.controller.marks.add(id);
@@ -617,10 +543,6 @@ export class ContextPanel {
 		else if (data === "k" || matchesKey(data, "up")) {
 			this.controller.inspectOffset = Math.max(0, this.controller.inspectOffset - 1);
 		} else if (data === "c") {
-			if (this.opts.input.readOnly) {
-				this.deny();
-				return;
-			}
 			const id = this.controller.inspectId;
 			if (id && cropCandidates(this.opts.input).some((candidate) => candidate.entryId === id)) {
 				this.controller.marks.add(id);
@@ -637,13 +559,13 @@ export class ContextPanel {
 	}
 
 	render(width: number): string[] {
-		const header = panelHeader(this.opts.input, this.controller.view);
+		const input = this.opts.input;
+		const currentFork = nearestOpenFork(input.branch, input.forks);
+		const session = input.sessionName ? ` · ${input.sessionName}` : "";
 		const frame = new Container();
-		const readOnly = header.readOnly ? this.opts.theme.fg("warning", " READ-ONLY ") : "";
-		const session = header.sessionName ? ` · ${header.sessionName}` : "";
 		frame.addChild(
 			new Text(
-				` ${this.opts.theme.fg("accent", this.opts.theme.bold("pi-context-tree"))} ${this.opts.theme.fg("dim", `· ${header.view}`)}  ${header.project}${this.opts.theme.fg("dim", session)} ${this.opts.theme.fg("success", `⎇ ${header.branchName}`)}${header.model ? this.opts.theme.fg("dim", ` · ${header.model}`) : ""}${readOnly}`,
+				` ${this.opts.theme.fg("accent", this.opts.theme.bold("pi-context-tree"))} ${this.opts.theme.fg("dim", `· ${this.controller.view}`)}  ${input.project}${this.opts.theme.fg("dim", session)} ${this.opts.theme.fg("success", `⎇ ${currentFork?.data.name ?? "trunk"}`)}${input.model ? this.opts.theme.fg("dim", ` · ${input.model}`) : ""}`,
 				0,
 				0,
 			),
@@ -652,8 +574,8 @@ export class ContextPanel {
 			new Text(
 				` ${renderGauge(
 					{
-						tokens: header.tokens,
-						window: header.window,
+						tokens: input.usageTokens ?? null,
+						window: input.contextWindow,
 						barWidth: Math.min(30, Math.max(10, width - 50)),
 					},
 					this.opts.theme,
@@ -690,7 +612,7 @@ export class ContextPanel {
 	}
 }
 
-export function buildPanelInput(pi: ExtensionAPI, ctx: ExtensionContext, opts: PanelOpenOptions = {}): PanelInput {
+export function buildPanelInput(ctx: ExtensionContext, opts: PanelOpenOptions = {}): PanelInput {
 	const usage = ctx.getContextUsage();
 	const state = deriveState(ctx);
 	return {
@@ -702,27 +624,22 @@ export function buildPanelInput(pi: ExtensionAPI, ctx: ExtensionContext, opts: P
 		forks: state.forks,
 		leafId: state.leafId,
 		project: basename(ctx.cwd),
-		sessionName: pi.getSessionName(),
+		sessionName: ctx.sessionManager.getSessionName(),
 		model: ctx.model?.id,
 		contextWindow: ctx.model?.contextWindow ?? usage?.contextWindow,
 		usageTokens: usage?.tokens,
-		readOnly: opts.readOnly,
 		dryRun: opts.dryRun,
 		initialView: opts.initialView,
 		premark: opts.premark,
 	};
 }
 
-async function openPanel(
-	pi: ExtensionAPI,
-	ctx: ExtensionContext,
-	opts: PanelOpenOptions = {},
-): Promise<PanelAction | undefined> {
+async function openPanel(ctx: ExtensionContext, opts: PanelOpenOptions = {}): Promise<PanelAction | undefined> {
 	if (ctx.mode !== "tui") {
 		ctx.ui.notify("the context panel needs pi's interactive TUI (ui.custom unavailable in this mode)", "warning");
 		return undefined;
 	}
-	const input = buildPanelInput(pi, ctx, opts);
+	const input = buildPanelInput(ctx, opts);
 	const action = await ctx.ui.custom<PanelAction>(
 		(tui, theme, _keybindings, done) => {
 			const rows = (tui as { terminal?: { rows?: number } }).terminal?.rows;
@@ -826,7 +743,7 @@ export async function cropHandler(pi: ExtensionAPI, ctx: ExtensionCommandContext
 	if (flags.auto && premark.length === 0) {
 		ctx.ui.notify("--auto matched nothing (protected/latest results are skipped) — opening review anyway", "info");
 	}
-	const action = await openPanel(pi, ctx, { initialView: "crop", premark, dryRun: flags.dryRun });
+	const action = await openPanel(ctx, { initialView: "crop", premark, dryRun: flags.dryRun });
 	if (!action || action.type !== "crop-apply") return;
 	if (action.dryRun) return notifyDryRun(ctx, action.plan);
 	await applyCropPlan(pi, ctx, action.plan);
@@ -846,21 +763,13 @@ export function registerCrop(pi: ExtensionAPI): void {
 	});
 }
 
-function isCommandContext(ctx: ExtensionContext): ctx is ExtensionCommandContext {
-	return "navigateTree" in ctx;
-}
-
 async function executePanelAction(
 	pi: ExtensionAPI,
-	ctx: ExtensionContext,
+	ctx: ExtensionCommandContext,
 	action: PanelAction | undefined,
 	draft: DraftFn,
 ): Promise<void> {
 	if (!action || action.type === "close") return;
-	if (!isCommandContext(ctx)) {
-		ctx.ui.notify("this action needs a command context — run /panel (Ctrl+Q is view-only in 0.84.3)", "warning");
-		return;
-	}
 	switch (action.type) {
 		case "jump": {
 			const navigation = await ctx.navigateTree(action.entryId, { summarize: false });
@@ -892,12 +801,12 @@ async function executePanelAction(
 
 async function runPanel(
 	pi: ExtensionAPI,
-	ctx: ExtensionContext,
+	ctx: ExtensionCommandContext,
 	draft: DraftFn,
 	opts: PanelOpenOptions = {},
 ): Promise<void> {
-	for (let count = 0; count < 50; count++) {
-		const action = await openPanel(pi, ctx, opts);
+	while (true) {
+		const action = await openPanel(ctx, opts);
 		if (!action || action.type === "close") return;
 		await executePanelAction(pi, ctx, action, draft);
 	}
@@ -910,7 +819,7 @@ export function registerPanel(pi: ExtensionAPI, draft: DraftFn): void {
 	});
 	pi.registerShortcut("ctrl+q", {
 		description: "pi-context-tree: open the context panel",
-		handler: (ctx) => runPanel(pi, ctx, draft, { readOnly: !isCommandContext(ctx) }),
+		handler: () => pi.sendUserMessage("/panel", { expandPromptTemplates: true }),
 	});
 	pi.registerCommand("decisions", {
 		description: "pi-context-tree: decision records on the current trunk (F7) — --export [path] for portable markdown",

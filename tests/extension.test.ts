@@ -197,6 +197,7 @@ interface World {
 	renderers: Map<string, (...args: any[]) => Component | undefined>;
 	navigations: Array<{ entryId: string; summarize?: boolean }>;
 	modelsSet: string[];
+	sentUserMessages: Array<{ content: unknown; options: unknown }>;
 }
 
 function world(): World {
@@ -208,6 +209,7 @@ function world(): World {
 	const renderers = new Map<string, (...args: any[]) => Component | undefined>();
 	const navigations: World["navigations"] = [];
 	const modelsSet: string[] = [];
+	const sentUserMessages: World["sentUserMessages"] = [];
 	let currentModel = models[0] as Model<any>;
 	const events = createEventBus();
 	const pi = {
@@ -221,6 +223,9 @@ function world(): World {
 		},
 		sendMessage: (message) => {
 			session.manager.appendCustomMessageEntry(message.customType, message.content, message.display, message.details);
+		},
+		sendUserMessage: (content, options) => {
+			sentUserMessages.push({ content, options });
 		},
 		appendEntry: (customType, data) => {
 			session.manager.appendCustomEntry(customType, data);
@@ -283,6 +288,7 @@ function world(): World {
 		renderers,
 		navigations,
 		modelsSet,
+		sentUserMessages,
 	};
 }
 
@@ -1246,7 +1252,7 @@ describe("crop command and inline recovery sequence", () => {
 		const notices: string[] = [];
 		const actions: unknown[] = [];
 		const panel = new ContextPanel({
-			input: { ...buildPanelInput(value.pi, value.ctx), initialView: "crop" },
+			input: { ...buildPanelInput(value.ctx), initialView: "crop" },
 			tui: { requestRender: () => {} } as never,
 			theme: value.ui.theme as never,
 			onAction: (action) => actions.push(action),
@@ -1357,7 +1363,7 @@ describe("ambient and panel behavior", () => {
 		expect(durableSequence(headless.session.manager)).toEqual([]);
 	});
 
-	it("opens the panel from Ctrl+Q", async () => {
+	it("dispatches the actionable /panel command from Ctrl+Q without opening UI directly", async () => {
 		const value = world();
 		value.session.user("root");
 		const optionsSeen: unknown[] = [];
@@ -1367,6 +1373,9 @@ describe("ambient and panel behavior", () => {
 		};
 		registerPanel(value.pi, draft);
 		await value.shortcuts.get("ctrl+q")?.(value.ctx);
+		expect(value.sentUserMessages).toEqual([{ content: "/panel", options: { expandPromptTemplates: true } }]);
+		expect(optionsSeen).toEqual([]);
+		await value.commands.get("panel")?.("", value.ctx);
 		expect(optionsSeen).toEqual([{ overlay: true, overlayOptions: { anchor: "center", width: "100%" } }]);
 	});
 
@@ -1409,8 +1418,9 @@ describe("ambient and panel behavior", () => {
 		value.session.toolUse("read", { path: "large" }, "x".repeat(20_000));
 		value.session.assistant("done");
 		const actions: unknown[] = [];
+		value.session.manager.appendSessionInfo("panel session");
 		const panel = new ContextPanel({
-			input: buildPanelInput(value.pi, value.ctx),
+			input: buildPanelInput(value.ctx),
 			tui: { requestRender: () => {} } as never,
 			theme: value.ui.theme as never,
 			onAction: (action) => actions.push(action),
@@ -1419,6 +1429,7 @@ describe("ambient and panel behavior", () => {
 		for (const width of [60, 100]) {
 			for (const line of panel.render(width)) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 		}
+		expect(panel.opts.input.sessionName).toBe("panel session");
 		expect(panel.controller.view).toBe("tree");
 		panel.handleInput("c");
 		expect(panel.controller.view).toBe("crop");
@@ -1442,7 +1453,7 @@ describe("ambient and panel behavior", () => {
 		expect(actions).toHaveLength(1);
 	});
 
-	it("keeps panel command, shortcut, no-UI decisions, and read-only paths", async () => {
+	it("keeps panel command, shortcut, and no-UI decisions", async () => {
 		const value = world();
 		value.session.user("root");
 		registerPanel(value.pi, draft);
