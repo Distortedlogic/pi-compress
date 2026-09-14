@@ -11,14 +11,6 @@ import type { Component } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import { applyCompression, prepareCompression, registerBatchCompression } from "../src/batch.ts";
 import {
-	autoSelect,
-	contextTurns,
-	cropCandidates,
-	planCrop,
-	planRemoveTurns,
-	renderReconstruction,
-} from "../src/compression.ts";
-import {
 	aggregateConsumers,
 	band,
 	estimateEntryTokens,
@@ -34,6 +26,14 @@ import {
 	resolveRangeEndpoint,
 	sourceSha8,
 } from "../src/core/range-rewrite.ts";
+import {
+	autoSelect,
+	contextTurns,
+	cropCandidates,
+	planCrop,
+	planRemoveTurns,
+	renderReconstruction,
+} from "../src/crop.ts";
 import {
 	type BatchSnapshot,
 	COMPRESSION_ENTRY,

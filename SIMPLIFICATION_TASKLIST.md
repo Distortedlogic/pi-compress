@@ -301,25 +301,25 @@ interface ForkInfo {
 
 **Files:** `src/compression.ts`, `src/panel.ts`, `src/index.ts`, related existing tests
 
-- [ ] Rename `src/compression.ts` to `src/crop.ts` with Git-aware file movement.
-- [ ] Keep these domain operations in `crop.ts`:
+- [x] Rename `src/compression.ts` to `src/crop.ts` with Git-aware file movement.
+- [x] Keep these domain operations in `crop.ts`:
   - Candidate discovery.
   - Automatic selection.
   - Crop planning.
   - Whole-turn planning.
   - Reconstruction rendering.
   - Crop rewrite application.
-- [ ] Move command and panel orchestration to `panel.ts`:
+- [x] Move command and panel orchestration to `panel.ts`:
   - Crop argument parsing.
   - Dry-run notification.
   - `/crop` command handler.
   - `/crop` command registration.
   - Dynamic panel opening.
-- [ ] Remove the dynamic `import("./panel.ts")` call.
-- [ ] Make `panel.ts` import crop domain operations from `crop.ts`.
-- [ ] Confirm that `crop.ts` does not import `panel.ts`.
-- [ ] Update `index.ts` to import crop registration from its new owner.
-- [ ] Preserve all `/crop` flag behavior:
+- [x] Remove the dynamic `import("./panel.ts")` call.
+- [x] Make `panel.ts` import crop domain operations from `crop.ts`.
+- [x] Confirm that `crop.ts` does not import `panel.ts`.
+- [x] Update `index.ts` to import crop registration from its new owner.
+- [x] Preserve all `/crop` flag behavior:
   - `--top`
   - `--auto`
   - `--apply`
@@ -330,10 +330,10 @@ interface ForkInfo {
 
 ### Acceptance gate
 
-- [ ] There is no `crop.ts` ↔ `panel.ts` cycle.
-- [ ] `/crop` has the same argument and review behavior.
-- [ ] Crop planning can run without importing TUI orchestration.
-- [ ] `npm test` and `npm run check` pass.
+- [x] There is no `crop.ts` ↔ `panel.ts` cycle.
+- [x] `/crop` has the same argument and review behavior.
+- [x] Crop planning can run without importing TUI orchestration.
+- [x] `npm test` and `npm run check` pass.
 
 ---
 

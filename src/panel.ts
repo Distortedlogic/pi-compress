@@ -21,19 +21,9 @@ import {
 	matchesKey,
 	truncateToWidth,
 } from "@earendil-works/pi-tui";
+import parseArgs from "yargs-parser";
 import { renderGauge } from "./ambient.ts";
 import { branchHandler, exportDecisions, mergeHandler, notifyDecisions, parseDecisionArgs } from "./branches.ts";
-import {
-	type ContextTurn,
-	type CropCandidate,
-	type CropPlan,
-	applyCropPlan,
-	autoSelect,
-	contextTurns,
-	cropCandidates,
-	planCrop,
-	planRemoveTurns,
-} from "./compression.ts";
 import {
 	type Band,
 	type ForkInfo,
@@ -47,6 +37,17 @@ import {
 	nearestOpenFork,
 	serializeEntry,
 } from "./context.ts";
+import {
+	type ContextTurn,
+	type CropCandidate,
+	type CropPlan,
+	applyCropPlan,
+	autoSelect,
+	contextTurns,
+	cropCandidates,
+	planCrop,
+	planRemoveTurns,
+} from "./crop.ts";
 import type { DraftFn } from "./extension/draft.ts";
 import {
 	CTREE_DECISION,
@@ -79,6 +80,23 @@ export type PanelAction =
 	| { type: "branch"; entryId: string }
 	| { type: "merge" }
 	| { type: "crop-apply"; plan: CropPlan; dryRun: boolean };
+
+interface CropFlags {
+	auto: boolean;
+	dryRun: boolean;
+	apply: boolean;
+	top: boolean;
+	minTokens?: number;
+	olderThan?: number;
+	keep: string[];
+}
+
+const CROP_ARGUMENT_CONFIGURATION = {
+	"boolean-negation": false,
+	"camel-case-expansion": false,
+	"parse-numbers": false,
+	"unknown-options-as-args": true,
+} as const;
 
 interface PanelHeader {
 	project: string;
@@ -695,7 +713,7 @@ export function buildPanelInput(pi: ExtensionAPI, ctx: ExtensionContext, opts: P
 	};
 }
 
-export async function openPanel(
+async function openPanel(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	opts: PanelOpenOptions = {},
@@ -719,6 +737,113 @@ export async function openPanel(
 		{ overlay: true, overlayOptions: { anchor: "center", width: "100%" } },
 	);
 	return action;
+}
+
+function parseCropFlags(args: string): CropFlags {
+	const parsed = parseArgs(args, {
+		array: ["keep"],
+		boolean: ["auto", "dry-run", "apply", "top"],
+		number: ["min-tokens", "older-than"],
+		string: ["keep"],
+		configuration: CROP_ARGUMENT_CONFIGURATION,
+	});
+	const keep = parsed.keep === undefined ? [] : (Array.isArray(parsed.keep) ? parsed.keep : [parsed.keep]).map(String);
+	return {
+		auto: parsed.auto === true,
+		dryRun: parsed["dry-run"] === true,
+		apply: parsed.apply === true,
+		top: parsed.top === true,
+		minTokens: typeof parsed["min-tokens"] === "number" ? parsed["min-tokens"] : undefined,
+		olderThan: typeof parsed["older-than"] === "number" ? parsed["older-than"] : undefined,
+		keep,
+	};
+}
+
+function notifyDryRun(ctx: ExtensionCommandContext, plan: CropPlan): void {
+	const lines = plan.stubs.map((stub) => `${stub.tool}${stub.arg ? ` ${stub.arg}` : ""} ~${fmtTokens(stub.estTokens)}`);
+	ctx.ui.notify(
+		`(dry-run) would crop ${plan.stubs.length}: ${lines.join(" · ")} — reclaim ~${fmtTokens(plan.reclaimTokens)}; nothing written`,
+		"info",
+	);
+}
+
+export async function cropHandler(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {
+	await ctx.waitForIdle();
+	const flags = parseCropFlags(args);
+	const state = deriveState(ctx);
+	if (!state.leafId) {
+		ctx.ui.notify("empty session — nothing to crop", "warning");
+		return;
+	}
+	const candidates = cropCandidates(state);
+	if (candidates.length === 0) {
+		ctx.ui.notify("no tool/MCP results on this branch — nothing to crop", "info");
+		return;
+	}
+
+	if (flags.top) {
+		const unprotected = candidates.filter((candidate) => !candidate.protected);
+		if (unprotected.length === 0) {
+			ctx.ui.notify("every candidate is its tool's latest result (protected) — open /crop to double-mark", "info");
+			return;
+		}
+		const top = unprotected.reduce((left, right) => (right.estTokens > left.estTokens ? right : left));
+		const confirmed = await ctx.ui.confirm(
+			"Crop the biggest result",
+			`✂ ${top.tool}${top.arg ? ` ${top.arg}` : ""} ~${fmtTokens(top.estTokens)} → crop this result? (original stays recoverable)`,
+		);
+		if (!confirmed) {
+			ctx.ui.notify("crop cancelled — nothing written", "info");
+			return;
+		}
+		const plan = planCrop(state, [top.entryId]);
+		if (flags.dryRun) return notifyDryRun(ctx, plan);
+		await applyCropPlan(pi, ctx, plan);
+		return;
+	}
+
+	if (flags.apply && !flags.auto) {
+		ctx.ui.notify("--apply needs --auto rules (interactive review applies from the panel)", "error");
+		return;
+	}
+	const premark = flags.auto
+		? autoSelect(candidates, {
+				minTokens: flags.minTokens,
+				olderThanTurns: flags.olderThan,
+				keep: flags.keep,
+			})
+		: [];
+	if (flags.auto && flags.apply) {
+		if (premark.length === 0) {
+			ctx.ui.notify("--auto matched nothing (protected/latest results are skipped) — nothing to crop", "info");
+			return;
+		}
+		const plan = planCrop(state, premark);
+		if (flags.dryRun) return notifyDryRun(ctx, plan);
+		await applyCropPlan(pi, ctx, plan);
+		return;
+	}
+	if (flags.auto && premark.length === 0) {
+		ctx.ui.notify("--auto matched nothing (protected/latest results are skipped) — opening review anyway", "info");
+	}
+	const action = await openPanel(pi, ctx, { initialView: "crop", premark, dryRun: flags.dryRun });
+	if (!action || action.type !== "crop-apply") return;
+	if (action.dryRun) return notifyDryRun(ctx, action.plan);
+	await applyCropPlan(pi, ctx, action.plan);
+}
+
+export function registerCrop(pi: ExtensionAPI): void {
+	pi.registerCommand("crop", {
+		description:
+			"pi-context-tree: surgically stub out huge tool/MCP results (--top for the biggest; interactive; --auto --apply --dry-run)",
+		handler: (args, ctx) => cropHandler(pi, ctx, args),
+		getArgumentCompletions: (prefix) => {
+			const flags = ["--top", "--auto", "--apply", "--dry-run", "--min-tokens", "--older-than", "--keep"];
+			const last = prefix.split(/\s+/).pop() ?? "";
+			const matches = flags.filter((flag) => flag.startsWith(last));
+			return matches.length ? matches.map((value) => ({ value, label: value })) : null;
+		},
+	});
 }
 
 function isCommandContext(ctx: ExtensionContext): ctx is ExtensionCommandContext {

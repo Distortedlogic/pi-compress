@@ -27,12 +27,12 @@ import {
 	resetModelCompletions,
 	undoHandler,
 } from "../src/branches.ts";
-import { applyCropPlan, cropHandler, planCrop } from "../src/compression.ts";
 import { estimateEntryTokens, snapshotSession } from "../src/context.ts";
 import { applyRewrite, prepareRewrite, rangeCandidates, revalidateRewrite } from "../src/core/range-rewrite.ts";
+import { applyCropPlan, planCrop } from "../src/crop.ts";
 import type { DraftFn } from "../src/extension/draft.ts";
 import piContextCompress from "../src/index.ts";
-import { ContextPanel, buildPanelInput, registerPanel } from "../src/panel.ts";
+import { ContextPanel, buildPanelInput, cropHandler, registerPanel } from "../src/panel.ts";
 import {
 	type BatchSnapshot,
 	COMPRESSION_ENTRY,
