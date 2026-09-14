@@ -467,18 +467,18 @@ pi.sendUserMessage("/panel", { expandPromptTemplates: true });
 
 Build one domain-specific coordinator. Do not build a reusable workflow framework.
 
-- [ ] Define a normalized internal request with a `kind` of `range` or `batch`.
-- [ ] Include `kind` in the operation key so equal session and operation IDs from different protocols cannot collide.
-- [ ] Replace separate prepared, pending, cancelled, and mutating collections with one discriminated operation-state map.
-- [ ] Support these states:
+- [x] Define a normalized internal request with a `kind` of `range` or `batch`.
+- [x] Include `kind` in the operation key so equal session and operation IDs from different protocols cannot collide.
+- [x] Replace separate prepared, pending, cancelled, and mutating collections with one discriminated operation-state map.
+- [x] Support these states:
   - Absent.
   - Preparing with request, promise, and `AbortController`.
   - Prepared with request and prepared value.
   - Applying with request and promise.
   - Cancelled.
-- [ ] Use the session marker as the source of truth for an already applied operation.
-- [ ] Compare duplicate requests after removal of `requestId` only.
-- [ ] Keep these transitions:
+- [x] Use the session marker as the source of truth for an already applied operation.
+- [x] Compare duplicate requests after removal of `requestId` only.
+- [x] Keep these transitions:
   - Duplicate matching prepare waits for or returns the same outcome.
   - Conflicting prepare returns `operation_conflict`.
   - A non-matching action during preparation or apply returns `busy`.
@@ -487,20 +487,20 @@ Build one domain-specific coordinator. Do not build a reusable workflow framewor
   - Cancel aborts preparation and removes prepared state.
   - Cancel during mutation returns `busy` and does not interrupt an append-only rewrite halfway through apply.
   - Session or leaf changes return `session_changed` where they do now.
-- [ ] Pass the preparation signal through model calls.
-- [ ] Delete all states for the old session on `session_shutdown`.
-- [ ] Keep result emission outside the state transition so every accepted request gets one result.
-- [ ] Catch unexpected errors at the adapter boundary and return `compression_failed`.
-- [ ] Adapt the normal range protocol to this coordinator first.
-- [ ] Keep all public range-compression function and type exports stable.
+- [x] Pass the preparation signal through model calls.
+- [x] Delete all states for the old session on `session_shutdown`.
+- [x] Keep result emission outside the state transition so every accepted request gets one result.
+- [x] Catch unexpected errors at the adapter boundary and return `compression_failed`.
+- [x] Adapt the normal range protocol to this coordinator first.
+- [x] Keep all public range-compression function and type exports stable.
 
 ### Acceptance gate
 
-- [ ] The range protocol passes all state-transition and cancellation tests.
-- [ ] One operation cannot exist in incompatible state collections.
-- [ ] A cancelled model call receives an aborted signal.
-- [ ] Apply remains non-interruptible after session mutation starts.
-- [ ] `npm test` and `npm run check` pass before batch migration starts.
+- [x] The range protocol passes all state-transition and cancellation tests.
+- [x] One operation cannot exist in incompatible state collections.
+- [x] A cancelled model call receives an aborted signal.
+- [x] Apply remains non-interruptible after session mutation starts.
+- [x] `npm test` and `npm run check` pass before batch migration starts.
 
 ---
 
