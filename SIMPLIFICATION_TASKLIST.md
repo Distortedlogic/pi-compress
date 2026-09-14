@@ -380,36 +380,36 @@ interface ForkInfo {
 
 **Files:** `src/protocol.ts`, related existing tests
 
-- [ ] Define one shared compression status schema for:
+- [x] Define one shared compression status schema for:
   - `prepared`
   - `applied`
   - `cancelled`
   - `missing`
   - `failed`
-- [ ] Define one shared compression failure-code schema for:
+- [x] Define one shared compression failure-code schema for:
   - `invalid_request`
   - `operation_conflict`
   - `session_changed`
   - `compression_failed`
   - `not_prepared`
   - `busy`
-- [ ] Reuse these schemas in both range and batch result schemas.
-- [ ] Define a shared property object for `v`, `requestId`, `sessionId`, and `operationId`.
-- [ ] Use object spread to build request and result variants.
-- [ ] Keep each wire schema `additionalProperties: false`.
-- [ ] Remove the `stored` constant and omit `additionalProperties: true` from stored-entry schemas.
-- [ ] Confirm that stored schemas still accept forward-compatible additional properties.
-- [ ] Keep all exported schema, type, parser, and constant names.
-- [ ] Keep status-specific required fields in the range result union.
-- [ ] Do not weaken validation of required `details` or `code` fields.
+- [x] Reuse these schemas in both range and batch result schemas.
+- [x] Define a shared property object for `v`, `requestId`, `sessionId`, and `operationId`.
+- [x] Use object spread to build request and result variants.
+- [x] Keep each wire schema `additionalProperties: false`.
+- [x] Remove the `stored` constant and omit `additionalProperties: true` from stored-entry schemas.
+- [x] Confirm that stored schemas still accept forward-compatible additional properties.
+- [x] Keep all exported schema, type, parser, and constant names.
+- [x] Keep status-specific required fields in the range result union.
+- [x] Do not weaken validation of required `details` or `code` fields.
 
 ### Acceptance gate
 
-- [ ] Previously valid wire messages remain valid.
-- [ ] Previously invalid extra wire fields remain invalid.
-- [ ] Stored entries with unknown future fields remain valid.
-- [ ] All public protocol exports remain available.
-- [ ] `npm test`, `npm run check`, and `npm run knip` pass.
+- [x] Previously valid wire messages remain valid.
+- [x] Previously invalid extra wire fields remain invalid.
+- [x] Stored entries with unknown future fields remain valid.
+- [x] All public protocol exports remain available.
+- [x] `npm test`, `npm run check`, and `npm run knip` pass.
 
 ---
 

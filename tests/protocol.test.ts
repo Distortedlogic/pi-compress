@@ -232,6 +232,22 @@ describe("external event schemas", () => {
 			}),
 		).toBe(true);
 	});
+
+	it.each(["invalid_request", "operation_conflict", "session_changed", "compression_failed", "not_prepared", "busy"])(
+		"accepts shared failure code %s",
+		(code) => {
+			const result = {
+				v: 1,
+				requestId: "request",
+				sessionId: "session",
+				operationId: "operation",
+				status: "failed",
+				code,
+			};
+			expect(Value.Check(CompressionResultSchema, result)).toBe(true);
+			expect(Value.Check(CompressionResultSchema, { ...result, code: "unknown" })).toBe(false);
+		},
+	);
 });
 
 describe("generic range event schemas", () => {

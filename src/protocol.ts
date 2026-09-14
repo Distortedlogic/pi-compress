@@ -8,9 +8,29 @@ import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 
 const exact = { additionalProperties: false } as const;
-const stored = { additionalProperties: true } as const;
 const Id = Type.String({ minLength: 1 });
 const Hash = Type.String({ pattern: "^[a-f0-9]{64}$" });
+const CompressionOperationProperties = {
+	v: Type.Literal(1),
+	requestId: Id,
+	sessionId: Id,
+	operationId: Id,
+};
+const CompressionStatusSchema = Type.Union([
+	Type.Literal("prepared"),
+	Type.Literal("applied"),
+	Type.Literal("cancelled"),
+	Type.Literal("missing"),
+	Type.Literal("failed"),
+]);
+const CompressionFailureCodeSchema = Type.Union([
+	Type.Literal("invalid_request"),
+	Type.Literal("operation_conflict"),
+	Type.Literal("session_changed"),
+	Type.Literal("compression_failed"),
+	Type.Literal("not_prepared"),
+	Type.Literal("busy"),
+]);
 
 export const CTREE_FORK = "ctree/fork";
 export const CTREE_CLOSE = "ctree/close";
@@ -29,133 +49,93 @@ export const CtreeCloseStatusSchema = Type.Union([
 ]);
 export type CtreeCloseStatus = Static<typeof CtreeCloseStatusSchema>;
 
-export const CtreeForkDataSchema = Type.Object(
-	{
-		v: Type.Literal(1),
-		name: Type.String(),
-		parentEntryId: Type.Union([Type.String(), Type.Null()]),
-		trunkModel: Type.Optional(Type.String()),
-		branchModel: Type.Optional(Type.String()),
-		createdAt: Type.Number(),
-		status: Type.Literal("open"),
-	},
-	stored,
-);
+export const CtreeForkDataSchema = Type.Object({
+	v: Type.Literal(1),
+	name: Type.String(),
+	parentEntryId: Type.Union([Type.String(), Type.Null()]),
+	trunkModel: Type.Optional(Type.String()),
+	branchModel: Type.Optional(Type.String()),
+	createdAt: Type.Number(),
+	status: Type.Literal("open"),
+});
 export type CtreeForkData = Static<typeof CtreeForkDataSchema>;
 
-export const CtreeCloseDataSchema = Type.Object(
-	{
-		v: Type.Literal(1),
-		forkEntryId: Type.String(),
-		status: CtreeCloseStatusSchema,
-		decisionEntryId: Type.Optional(Type.String()),
-		note: Type.Optional(Type.String()),
-		prevLeafId: Type.Optional(Type.String()),
-	},
-	stored,
-);
+export const CtreeCloseDataSchema = Type.Object({
+	v: Type.Literal(1),
+	forkEntryId: Type.String(),
+	status: CtreeCloseStatusSchema,
+	decisionEntryId: Type.Optional(Type.String()),
+	note: Type.Optional(Type.String()),
+	prevLeafId: Type.Optional(Type.String()),
+});
 export type CtreeCloseData = Static<typeof CtreeCloseDataSchema>;
 
-export const CtreeCropStubSchema = Type.Object(
-	{
-		entryId: Type.String(),
-		tool: Type.String(),
-		arg: Type.Optional(Type.String()),
-		estTokens: Type.Number(),
-		sha8: Type.String(),
-	},
-	stored,
-);
+export const CtreeCropStubSchema = Type.Object({
+	entryId: Type.String(),
+	tool: Type.String(),
+	arg: Type.Optional(Type.String()),
+	estTokens: Type.Number(),
+	sha8: Type.String(),
+});
 export type CtreeCropStub = Static<typeof CtreeCropStubSchema>;
 
-export const CtreeCropDropSchema = Type.Object(
-	{
-		userId: Type.String(),
-		entryIds: Type.Array(Type.String()),
-		label: Type.String(),
-		estTokens: Type.Number(),
-		sha8: Type.String(),
-	},
-	stored,
-);
+export const CtreeCropDropSchema = Type.Object({
+	userId: Type.String(),
+	entryIds: Type.Array(Type.String()),
+	label: Type.String(),
+	estTokens: Type.Number(),
+	sha8: Type.String(),
+});
 export type CtreeCropDrop = Static<typeof CtreeCropDropSchema>;
 
-export const CtreeCropDataSchema = Type.Object(
-	{
-		v: Type.Literal(1),
-		sourceLeafId: Type.String(),
-		stubbed: Type.Array(CtreeCropStubSchema),
-		dropped: Type.Optional(Type.Array(CtreeCropDropSchema)),
-	},
-	stored,
-);
+export const CtreeCropDataSchema = Type.Object({
+	v: Type.Literal(1),
+	sourceLeafId: Type.String(),
+	stubbed: Type.Array(CtreeCropStubSchema),
+	dropped: Type.Optional(Type.Array(CtreeCropDropSchema)),
+});
 export type CtreeCropData = Static<typeof CtreeCropDataSchema>;
 
-export const CtreeDecisionSiblingSchema = Type.Object(
-	{
-		name: Type.String(),
-		reason: Type.String(),
-	},
-	stored,
-);
+export const CtreeDecisionSiblingSchema = Type.Object({
+	name: Type.String(),
+	reason: Type.String(),
+});
 
-export const CtreeDecisionDetailsSchema = Type.Object(
-	{
-		v: Type.Literal(1),
-		forkEntryId: Type.String(),
-		branchName: Type.String(),
-		siblings: Type.Optional(Type.Array(CtreeDecisionSiblingSchema)),
-	},
-	stored,
-);
+export const CtreeDecisionDetailsSchema = Type.Object({
+	v: Type.Literal(1),
+	forkEntryId: Type.String(),
+	branchName: Type.String(),
+	siblings: Type.Optional(Type.Array(CtreeDecisionSiblingSchema)),
+});
 export type CtreeDecisionDetails = Static<typeof CtreeDecisionDetailsSchema>;
 
-export const CtreeRangeCompactDataSchema = Type.Object(
-	{
-		v: Type.Literal(1),
-		operationId: Type.Optional(Type.String()),
-		sourceLeafId: Type.String(),
-		anchorId: Type.String(),
-		startEntryId: Type.String(),
-		endEntryId: Type.String(),
-		selectedEntryIds: Type.Array(Type.String()),
-		selectedEstTokens: Type.Number(),
-		summaryEstTokens: Type.Number(),
-		reclaimedEstTokens: Type.Number(),
-		summaryModel: Type.String(),
-		sourceSha8: Type.String(),
-	},
-	stored,
-);
+export const CtreeRangeCompactDataSchema = Type.Object({
+	v: Type.Literal(1),
+	operationId: Type.Optional(Type.String()),
+	sourceLeafId: Type.String(),
+	anchorId: Type.String(),
+	startEntryId: Type.String(),
+	endEntryId: Type.String(),
+	selectedEntryIds: Type.Array(Type.String()),
+	selectedEstTokens: Type.Number(),
+	summaryEstTokens: Type.Number(),
+	reclaimedEstTokens: Type.Number(),
+	summaryModel: Type.String(),
+	sourceSha8: Type.String(),
+});
 export type CtreeRangeCompactData = Static<typeof CtreeRangeCompactDataSchema>;
 export type CtreeRangeTailDetails = CtreeRangeCompactData;
 
-export const RangeCompressionStatusSchema = Type.Union([
-	Type.Literal("prepared"),
-	Type.Literal("applied"),
-	Type.Literal("cancelled"),
-	Type.Literal("missing"),
-	Type.Literal("failed"),
-]);
+export const RangeCompressionStatusSchema = CompressionStatusSchema;
 export type RangeCompressionStatus = Static<typeof RangeCompressionStatusSchema>;
 
-export const RangeCompressionFailureCodeSchema = Type.Union([
-	Type.Literal("invalid_request"),
-	Type.Literal("operation_conflict"),
-	Type.Literal("session_changed"),
-	Type.Literal("compression_failed"),
-	Type.Literal("not_prepared"),
-	Type.Literal("busy"),
-]);
+export const RangeCompressionFailureCodeSchema = CompressionFailureCodeSchema;
 export type RangeCompressionFailureCode = Static<typeof RangeCompressionFailureCodeSchema>;
 
 export const RangeCompressionRequestSchema = Type.Union([
 	Type.Object(
 		{
-			v: Type.Literal(1),
-			requestId: Id,
-			sessionId: Id,
-			operationId: Id,
+			...CompressionOperationProperties,
 			action: Type.Literal("prepare"),
 			startEntryId: Id,
 			endEntryId: Id,
@@ -165,36 +145,9 @@ export const RangeCompressionRequestSchema = Type.Union([
 		},
 		exact,
 	),
-	Type.Object(
-		{
-			v: Type.Literal(1),
-			requestId: Id,
-			sessionId: Id,
-			operationId: Id,
-			action: Type.Literal("apply"),
-		},
-		exact,
-	),
-	Type.Object(
-		{
-			v: Type.Literal(1),
-			requestId: Id,
-			sessionId: Id,
-			operationId: Id,
-			action: Type.Literal("cancel"),
-		},
-		exact,
-	),
-	Type.Object(
-		{
-			v: Type.Literal(1),
-			requestId: Id,
-			sessionId: Id,
-			operationId: Id,
-			action: Type.Literal("status"),
-		},
-		exact,
-	),
+	Type.Object({ ...CompressionOperationProperties, action: Type.Literal("apply") }, exact),
+	Type.Object({ ...CompressionOperationProperties, action: Type.Literal("cancel") }, exact),
+	Type.Object({ ...CompressionOperationProperties, action: Type.Literal("status") }, exact),
 ]);
 export type RangeCompressionRequest = Static<typeof RangeCompressionRequestSchema>;
 export type RangeCompressionPrepareRequest = Extract<RangeCompressionRequest, { action: "prepare" }>;
@@ -203,55 +156,22 @@ export type RangeCompressionCancelRequest = Extract<RangeCompressionRequest, { a
 export type RangeCompressionStatusRequest = Extract<RangeCompressionRequest, { action: "status" }>;
 
 export const RangeCompressionResultSchema = Type.Union([
+	Type.Object({ ...CompressionOperationProperties, status: Type.Literal("prepared") }, exact),
 	Type.Object(
 		{
-			v: Type.Literal(1),
-			requestId: Id,
-			sessionId: Id,
-			operationId: Id,
-			status: Type.Literal("prepared"),
-		},
-		exact,
-	),
-	Type.Object(
-		{
-			v: Type.Literal(1),
-			requestId: Id,
-			sessionId: Id,
-			operationId: Id,
+			...CompressionOperationProperties,
 			status: Type.Literal("applied"),
 			details: CtreeRangeCompactDataSchema,
 		},
 		exact,
 	),
+	Type.Object({ ...CompressionOperationProperties, status: Type.Literal("cancelled") }, exact),
+	Type.Object({ ...CompressionOperationProperties, status: Type.Literal("missing") }, exact),
 	Type.Object(
 		{
-			v: Type.Literal(1),
-			requestId: Id,
-			sessionId: Id,
-			operationId: Id,
-			status: Type.Literal("cancelled"),
-		},
-		exact,
-	),
-	Type.Object(
-		{
-			v: Type.Literal(1),
-			requestId: Id,
-			sessionId: Id,
-			operationId: Id,
-			status: Type.Literal("missing"),
-		},
-		exact,
-	),
-	Type.Object(
-		{
-			v: Type.Literal(1),
-			requestId: Id,
-			sessionId: Id,
-			operationId: Id,
+			...CompressionOperationProperties,
 			status: Type.Literal("failed"),
-			code: RangeCompressionFailureCodeSchema,
+			code: CompressionFailureCodeSchema,
 		},
 		exact,
 	),
@@ -311,10 +231,7 @@ export type CompressionDetails = Static<typeof CompressionDetailsSchema>;
 
 export const CompressionRequestSchema = Type.Object(
 	{
-		v: Type.Literal(1),
-		requestId: Id,
-		sessionId: Id,
-		operationId: Id,
+		...CompressionOperationProperties,
 		runId: Id,
 		action: Type.Union([
 			Type.Literal("prepare"),
@@ -333,28 +250,10 @@ export type CompressionRequest = Static<typeof CompressionRequestSchema>;
 
 export const CompressionResultSchema = Type.Object(
 	{
-		v: Type.Literal(1),
-		requestId: Id,
-		sessionId: Id,
-		operationId: Id,
-		status: Type.Union([
-			Type.Literal("prepared"),
-			Type.Literal("applied"),
-			Type.Literal("cancelled"),
-			Type.Literal("missing"),
-			Type.Literal("failed"),
-		]),
+		...CompressionOperationProperties,
+		status: CompressionStatusSchema,
 		details: Type.Optional(CompressionDetailsSchema),
-		code: Type.Optional(
-			Type.Union([
-				Type.Literal("invalid_request"),
-				Type.Literal("operation_conflict"),
-				Type.Literal("session_changed"),
-				Type.Literal("compression_failed"),
-				Type.Literal("not_prepared"),
-				Type.Literal("busy"),
-			]),
-		),
+		code: Type.Optional(CompressionFailureCodeSchema),
 	},
 	exact,
 );
