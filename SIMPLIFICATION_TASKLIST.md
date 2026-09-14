@@ -510,33 +510,33 @@ Build one domain-specific coordinator. Do not build a reusable workflow framewor
 
 **Files:** `src/batch.ts`, `src/range-compression.ts`, `src/index.ts`, related existing tests
 
-- [ ] Keep a batch-specific target resolver that finds:
+- [x] Keep a batch-specific target resolver that finds:
   - The batch marker anchor.
   - The queued task message.
   - The first assistant execution entry.
   - The last safe endpoint at or before the settled entry.
-- [ ] Make batch summary preparation use the shared range preparation path.
-- [ ] Keep the batch task message in the prepared batch value.
-- [ ] Keep batch-specific details with `v: 2` and all current hashes, revisions, IDs, and bitmap data.
-- [ ] Keep batch-specific rewrite output:
+- [x] Make batch summary preparation use the shared range preparation path.
+- [x] Keep the batch task message in the prepared batch value.
+- [x] Keep batch-specific details with `v: 2` and all current hashes, revisions, IDs, and bitmap data.
+- [x] Keep batch-specific rewrite output:
   - `QUEUED_TASK_TAIL`
   - `COMPRESSION_TAIL`
   - `COMPRESSION_ENTRY`
-- [ ] Keep normal range output separate from batch output.
-- [ ] Add the batch protocol adapter to the shared coordinator.
-- [ ] Preserve duplicate, conflict, status, apply, cancel, busy, and session-change results.
-- [ ] Use the shared cancellation controller for batch summary drafting.
-- [ ] Move `registerBatchCompression()` into `range-compression.ts` or replace it with one `registerCompressionServices()` function.
-- [ ] Preserve a named `registerBatchCompression()` re-export if any recorded public or test consumer needs it.
-- [ ] Delete `src/batch.ts` after all imports move.
+- [x] Keep normal range output separate from batch output.
+- [x] Add the batch protocol adapter to the shared coordinator.
+- [x] Preserve duplicate, conflict, status, apply, cancel, busy, and session-change results.
+- [x] Use the shared cancellation controller for batch summary drafting.
+- [x] Move `registerBatchCompression()` into `range-compression.ts` or replace it with one `registerCompressionServices()` function.
+- [x] Preserve a named `registerBatchCompression()` re-export if any recorded public or test consumer needs it.
+- [x] Delete `src/batch.ts` after all imports move.
 
 ### Acceptance gate
 
-- [ ] Both protocols use one operation coordinator.
-- [ ] Both protocols retain their exact event names and result schemas.
-- [ ] Batch and normal range operations cannot collide.
-- [ ] Existing workstream batch clients require no change.
-- [ ] `npm test`, `npm run check`, and `npm run knip` pass.
+- [x] Both protocols use one operation coordinator.
+- [x] Both protocols retain their exact event names and result schemas.
+- [x] Batch and normal range operations cannot collide.
+- [x] Existing workstream batch clients require no change.
+- [x] `npm test`, `npm run check`, and `npm run knip` pass.
 
 ---
 

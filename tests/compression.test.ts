@@ -9,7 +9,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { applyCompression, prepareCompression, registerBatchCompression } from "../src/batch.ts";
 import {
 	aggregateConsumers,
 	band,
@@ -51,10 +50,13 @@ import {
 	type RangeCompressionInput,
 	type RangeCompressionOutcome,
 	type RangeCompressionTarget,
+	applyCompression,
 	applyPreparedRangeCompression,
 	compressRange,
+	prepareCompression,
 	prepareRangeCompression,
 	rangeCompressHandler,
+	registerBatchCompression,
 	registerRangeCompressionService,
 	renderRangeTail,
 	reviewRangeCompression,

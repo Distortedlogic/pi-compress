@@ -16,7 +16,6 @@ import {
 import { type Component, visibleWidth } from "@earendil-works/pi-tui";
 import { beforeEach, describe, expect, it } from "vitest";
 import { refreshAmbient, registerAmbient, resetAmbient } from "../src/ambient.ts";
-import { registerBatchCompression } from "../src/batch.ts";
 import {
 	branchHandler,
 	exportDecisionsMarkdown,
@@ -59,6 +58,8 @@ import {
 import {
 	prepareRangeCompression,
 	rangeCompressHandler,
+	registerBatchCompression,
+	registerCompressionServices,
 	registerRangeCompressionService,
 } from "../src/range-compression.ts";
 import { applyRewrite, prepareRewrite, rangeCandidates, revalidateRewrite } from "../src/rewrite.ts";
@@ -962,6 +963,26 @@ describe("range compression protocol", () => {
 });
 
 describe("batch compression protocol", () => {
+	it("isolates equal range and batch operation IDs in the unified coordinator", async () => {
+		const value = world();
+		const range = seedRange(value);
+		const batch = seedBatch(value);
+		registerCompressionServices(value.pi);
+		const operationId = "shared-operation";
+		expect(
+			await sendRangeRequest(value, rangePrepareRequest(value, range, "shared-range-prepare", operationId)),
+		).toMatchObject({ status: "prepared" });
+		expect(
+			await sendBatchRequest(value, batchRequest(value, batch, "shared-batch-prepare", operationId, "prepare")),
+		).toMatchObject({ status: "prepared" });
+		expect(
+			await sendRangeRequest(value, rangeControlRequest(value, "shared-range-cancel", operationId, "cancel")),
+		).toMatchObject({ status: "cancelled" });
+		expect(
+			await sendBatchRequest(value, batchRequest(value, batch, "shared-batch-status", operationId, "status")),
+		).toMatchObject({ status: "prepared" });
+	});
+
 	it("keeps prepare, duplicate, conflict, status, apply, and repeated-apply behavior", async () => {
 		const value = world();
 		const seed = seedBatch(value);
@@ -1042,15 +1063,17 @@ describe("batch compression protocol", () => {
 
 		const preparing = world();
 		const preparingSeed = seedBatch(preparing);
-		const started = deferred<void>();
-		const release = deferred<AssistantMessage>();
+		const started = deferred<AbortSignal>();
 		(
 			preparing.ctx.modelRegistry as unknown as {
 				complete: (...args: unknown[]) => Promise<AssistantMessage>;
 			}
-		).complete = async () => {
-			started.resolve(undefined);
-			return release.promise;
+		).complete = async (...args: unknown[]) => {
+			const signal = (args[2] as { signal: AbortSignal }).signal;
+			started.resolve(signal);
+			return new Promise<AssistantMessage>((_resolve, reject) => {
+				signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+			});
 		};
 		registerBatchCompression(preparing.pi);
 		const preparingOperation = "batch-preparing";
@@ -1058,14 +1081,14 @@ describe("batch compression protocol", () => {
 			preparing,
 			batchRequest(preparing, preparingSeed, "batch-cancel-preparing-prepare", preparingOperation, "prepare"),
 		);
-		await started.promise;
+		const signal = await started.promise;
 		expect(
 			await sendBatchRequest(
 				preparing,
 				batchRequest(preparing, preparingSeed, "batch-cancel-preparing", preparingOperation, "cancel"),
 			),
 		).toMatchObject({ status: "cancelled" });
-		release.resolve(assistantResponse("unused summary"));
+		expect(signal.aborted).toBe(true);
 		expect(await prepareResult).toMatchObject({ status: "cancelled" });
 
 		const prepared = world();

@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { contentText } from "@earendil-works/pi-ai";
 import {
 	BorderedLoader,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
+	type ExtensionContext,
+	type SessionEntry,
+	type SessionMessageEntry,
 	type SessionTreeNode,
 	TreeSelectorComponent,
 } from "@earendil-works/pi-coding-agent";
@@ -12,10 +16,20 @@ import { refreshAmbient } from "./ambient.ts";
 import { estimateTextTokens, fmtTokens, serializeEntry, snapshotSession } from "./context.ts";
 import { draftRangeSummary, realDraft } from "./extension/draft.ts";
 import {
+	type BatchSnapshot,
+	COMPRESSION_ENTRY,
+	COMPRESSION_REQUEST,
+	COMPRESSION_RESULT,
+	COMPRESSION_TAIL,
 	CTREE_RANGE_COMPACT,
 	CTREE_RANGE_TAIL,
+	type CompressionDetails,
 	type CompressionRequest,
+	CompressionRequestSchema,
+	type CompressionResult,
+	CompressionResultSchema,
 	type CtreeRangeCompactData,
+	QUEUED_TASK_TAIL,
 	RANGE_COMPRESSION_REQUEST,
 	RANGE_COMPRESSION_RESULT,
 	type RangeCompressionFailureCode,
@@ -24,6 +38,7 @@ import {
 	type RangeCompressionResult,
 	RangeCompressionResultSchema,
 	type RangeCompressionTransport,
+	compressionDetails as batchCompressionDetails,
 	ctreeRangeCompactData,
 } from "./protocol.ts";
 import {
@@ -56,6 +71,19 @@ export interface PreparedRangeCompression {
 	readonly operationId: string;
 }
 
+export interface CompressionPlan extends RewritePlan {
+	operationId: string;
+	preTaskAnchorId: string;
+	taskMessageEntryId: string;
+	taskMessage: string;
+}
+
+interface PreparedBatchCompression {
+	readonly plan: CompressionPlan;
+	readonly summary: string;
+	readonly taskMessage: string;
+}
+
 export type RangeCompressionOutcome = { status: "applied"; details: CtreeRangeCompactData } | { status: "cancelled" };
 
 type RangePhase = "start" | "end";
@@ -72,36 +100,48 @@ type RangeCompressionServiceOutcome =
 	| { status: "missing" }
 	| { status: "failed"; code: RangeCompressionFailureCode };
 
+type BatchCompressionServiceOutcome = Pick<CompressionResult, "status" | "details" | "code">;
+type CompressionOperationOutcome = RangeCompressionServiceOutcome | BatchCompressionServiceOutcome;
+type AppliedCompressionOutcome =
+	| { status: "applied"; details: CtreeRangeCompactData }
+	| { status: "applied"; details: CompressionDetails };
+type CompressionApplyOutcome = AppliedCompressionOutcome | { status: "cancelled" };
+
+type PreparedCompression =
+	| { readonly kind: "range"; readonly value: PreparedRangeCompression }
+	| { readonly kind: "batch"; readonly value: PreparedBatchCompression };
+
 type NormalizedCompressionRequest =
 	| { readonly kind: "range"; readonly request: RangeCompressionRequest }
 	| { readonly kind: "batch"; readonly request: CompressionRequest };
 
 type NormalizedRangeCompressionRequest = Extract<NormalizedCompressionRequest, { kind: "range" }>;
+type NormalizedBatchCompressionRequest = Extract<NormalizedCompressionRequest, { kind: "batch" }>;
 
 interface PreparingCompressionOperation {
 	readonly phase: "preparing";
 	readonly token: symbol;
-	readonly request: NormalizedRangeCompressionRequest;
-	readonly promise: Promise<RangeCompressionServiceOutcome>;
+	readonly request: NormalizedCompressionRequest;
+	readonly promise: Promise<CompressionOperationOutcome>;
 	readonly controller: AbortController;
 }
 
 interface PreparedCompressionOperation {
 	readonly phase: "prepared";
-	readonly request: NormalizedRangeCompressionRequest;
-	readonly prepared: PreparedRangeCompression;
+	readonly request: NormalizedCompressionRequest;
+	readonly prepared: PreparedCompression;
 }
 
 interface ApplyingCompressionOperation {
 	readonly phase: "applying";
 	readonly token: symbol;
-	readonly request: NormalizedRangeCompressionRequest;
-	readonly promise: Promise<RangeCompressionServiceOutcome>;
+	readonly request: NormalizedCompressionRequest;
+	readonly promise: Promise<CompressionOperationOutcome>;
 }
 
 interface CancelledCompressionOperation {
 	readonly phase: "cancelled";
-	readonly request: NormalizedRangeCompressionRequest;
+	readonly request: NormalizedCompressionRequest;
 }
 
 type CompressionOperationState =
@@ -347,8 +387,128 @@ export async function compressRange(
 	return details ? { status: "applied", details } : { status: "cancelled" };
 }
 
+function isQueuedTaskMessage(entry: SessionEntry): entry is SessionMessageEntry {
+	return (
+		entry.type === "message" &&
+		entry.message.role === "user" &&
+		contentText(entry.message.content, "\n").startsWith("[Queued task]\n\n")
+	);
+}
+
+export function prepareCompression(
+	ctx: ExtensionContext,
+	batchStartEntryId: string,
+	lastSettledEntryId: string,
+	operationId: string = randomUUID(),
+): CompressionPlan {
+	const entries = ctx.sessionManager.getBranch();
+	const markerIndex = entries.findIndex((entry) => entry.id === batchStartEntryId);
+	const endIndex = entries.findIndex((entry) => entry.id === lastSettledEntryId);
+	const sourceLeafId = ctx.sessionManager.getLeafId();
+	if (markerIndex === -1 || endIndex <= markerIndex || !sourceLeafId) {
+		throw new Error("The completed batch session range is not available.");
+	}
+	const taskMessageIndex = entries.findIndex(
+		(entry, index) => index > markerIndex && index <= endIndex && isQueuedTaskMessage(entry),
+	);
+	if (taskMessageIndex === -1) throw new Error("The queued batch message is not available.");
+	const startIndex = entries.findIndex(
+		(entry, index) =>
+			index > taskMessageIndex && index <= endIndex && entry.type === "message" && entry.message.role === "assistant",
+	);
+	if (startIndex === -1) throw new Error("The completed batch has no assistant execution range.");
+	const selectedIds = new Set(entries.slice(startIndex, endIndex + 1).map((entry) => entry.id));
+	const snapshot = snapshotSession(ctx.sessionManager);
+	const endpoint = rangeCandidates(snapshot).findLast((candidate) => selectedIds.has(candidate.endEntryId));
+	const startEntry = entries[startIndex];
+	if (!endpoint || !startEntry) throw new Error("The execution range is not available.");
+	const rewrite = prepareRewrite(snapshot, startEntry.id, endpoint.endEntryId, { anchorId: batchStartEntryId });
+	const taskMessageEntry = entries[taskMessageIndex];
+	if (!taskMessageEntry || !isQueuedTaskMessage(taskMessageEntry) || taskMessageEntry.message.role !== "user") {
+		throw new Error("The queued batch message is invalid.");
+	}
+	return {
+		...rewrite,
+		operationId,
+		preTaskAnchorId: batchStartEntryId,
+		taskMessageEntryId: taskMessageEntry.id,
+		taskMessage: contentText(taskMessageEntry.message.content, "\n"),
+	};
+}
+
+export async function applyCompression(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	runId: string,
+	batch: BatchSnapshot,
+	compression: CompressionPlan,
+	summary: string,
+): Promise<CompressionDetails> {
+	const details: CompressionDetails = {
+		v: 2,
+		runId,
+		planId: batch.planId,
+		batchId: batch.batchId,
+		operationId: compression.operationId,
+		structuralRevision: batch.structuralRevision,
+		fileRevision: batch.fileRevision,
+		preCompletionBitmap: [...batch.bitmap],
+		sourceLeafId: compression.sourceLeafId,
+		preTaskAnchorId: compression.preTaskAnchorId,
+		taskMessageEntryId: compression.taskMessageEntryId,
+		startEntryId: compression.startEntryId,
+		endEntryId: compression.endEntryId,
+		selectedEntryIds: [...compression.selectedEntryIds],
+		sourceSha256: compression.sourceSha256,
+	};
+	const applied = await applyRewrite(pi, ctx, compression, {
+		messages: [
+			{
+				customType: QUEUED_TASK_TAIL,
+				content: compression.taskMessage,
+				display: true,
+				details,
+			},
+			{
+				customType: COMPRESSION_TAIL,
+				content: summary.trim(),
+				display: true,
+				details,
+			},
+		],
+		marker: { customType: COMPRESSION_ENTRY, data: details },
+	});
+	if (!applied) throw new Error("Compression navigation was cancelled.");
+	return details;
+}
+
+function compressionOnBranch(
+	ctx: ExtensionContext,
+	runId: string,
+	planId: string,
+	batchId: string,
+): CompressionDetails | undefined {
+	for (const entry of ctx.sessionManager.getBranch().reverse()) {
+		const details = batchCompressionDetails(entry);
+		if (details?.runId === runId && details.planId === planId && details.batchId === batchId) {
+			return structuredClone(details);
+		}
+	}
+	return undefined;
+}
+
 function normalizeRangeCompressionRequest(request: RangeCompressionRequest): NormalizedRangeCompressionRequest {
 	return { kind: "range", request };
+}
+
+function normalizeBatchCompressionRequest(request: CompressionRequest): NormalizedBatchCompressionRequest {
+	return { kind: "batch", request };
+}
+
+function cloneNormalizedCompressionRequest(request: NormalizedCompressionRequest): NormalizedCompressionRequest {
+	return request.kind === "range"
+		? normalizeRangeCompressionRequest(structuredClone(request.request))
+		: normalizeBatchCompressionRequest(structuredClone(request.request));
 }
 
 function compressionOperationKey(request: NormalizedCompressionRequest): string {
@@ -372,7 +532,7 @@ function appliedRangeCompression(ctx: ExtensionCommandContext, operationId: stri
 	return undefined;
 }
 
-function isRangeCompressionContext(value: unknown): value is ExtensionCommandContext {
+function isCompressionContext(value: unknown): value is ExtensionCommandContext {
 	if (!value || typeof value !== "object") return false;
 	const context = value as Partial<ExtensionCommandContext>;
 	return (
@@ -395,53 +555,84 @@ class CompressionOperationCoordinator {
 		}
 	}
 
-	async executeRange(
-		request: RangeCompressionRequest,
+	execute(
+		request: NormalizedRangeCompressionRequest,
 		ctx: ExtensionCommandContext,
-	): Promise<RangeCompressionServiceOutcome> {
-		if (ctx.sessionManager.getSessionId() !== request.sessionId) {
+	): Promise<RangeCompressionServiceOutcome>;
+	execute(
+		request: NormalizedBatchCompressionRequest,
+		ctx: ExtensionCommandContext,
+	): Promise<BatchCompressionServiceOutcome>;
+	async execute(
+		request: NormalizedCompressionRequest,
+		ctx: ExtensionCommandContext,
+	): Promise<CompressionOperationOutcome> {
+		const input = request.request;
+		if (ctx.sessionManager.getSessionId() !== input.sessionId) {
 			return { status: "failed", code: "session_changed" };
 		}
-		const applied = appliedRangeCompression(ctx, request.operationId);
-		if (applied) return { status: "applied", details: applied };
+		const applied = this.appliedOutcome(request, ctx);
+		if (applied) return applied;
 
-		const normalized = normalizeRangeCompressionRequest(request);
-		const key = compressionOperationKey(normalized);
+		const key = compressionOperationKey(request);
 		const state = this.operations.get(key);
-
-		if (request.action === "cancel") {
-			if (this.hasApplyingOperation(request.sessionId)) return { status: "failed", code: "busy" };
+		if (input.action === "cancel") {
+			if (this.hasApplyingOperation(input.sessionId)) return { status: "failed", code: "busy" };
 			if (state?.phase === "preparing") state.controller.abort();
-			this.operations.set(key, { phase: "cancelled", request: normalized });
+			this.operations.set(key, { phase: "cancelled", request });
 			return { status: "cancelled" };
 		}
 		if (state?.phase === "cancelled") return { status: "cancelled" };
 
 		if (state?.phase === "preparing" || state?.phase === "applying") {
-			if (sameCompressionRequest(state.request, normalized)) return state.promise;
-			if (state.phase === "preparing" && state.request.request.action === "prepare" && request.action === "prepare") {
+			if (sameCompressionRequest(state.request, request)) return state.promise;
+			if (state.phase === "preparing" && state.request.request.action === "prepare" && input.action === "prepare") {
 				return { status: "failed", code: "operation_conflict" };
 			}
 			return { status: "failed", code: "busy" };
 		}
 
-		if (request.action === "status") return { status: state?.phase === "prepared" ? "prepared" : "missing" };
-
-		if (request.action === "prepare") {
+		if (input.action === "status") return { status: state?.phase === "prepared" ? "prepared" : "missing" };
+		if (input.action === "prepare") {
 			if (state?.phase === "prepared") {
-				return sameCompressionRequest(state.request, normalized)
+				return sameCompressionRequest(state.request, request)
 					? { status: "prepared" }
 					: { status: "failed", code: "operation_conflict" };
 			}
-			if (!ctx.isIdle() || ctx.hasPendingMessages() || !ctx.model) {
-				return { status: "failed", code: "invalid_request" };
-			}
-			return this.startRangePreparation(request, ctx, key);
+			if (!this.canPrepare(request, ctx)) return { status: "failed", code: "invalid_request" };
+			return this.startPreparation(request, ctx, key);
 		}
 
-		if (state?.phase !== "prepared") return { status: "failed", code: "not_prepared" };
-		if (this.hasApplyingOperation(request.sessionId)) return { status: "failed", code: "busy" };
-		return this.startRangeApply(request, ctx, key, state);
+		if (state?.phase !== "prepared" || state.prepared.kind !== request.kind) {
+			return { status: "failed", code: "not_prepared" };
+		}
+		if (this.hasApplyingOperation(input.sessionId)) return { status: "failed", code: "busy" };
+		if (request.kind === "batch" && (!ctx.isIdle() || ctx.hasPendingMessages())) {
+			return { status: "failed", code: "session_changed" };
+		}
+		return this.startApply(request, ctx, key, state);
+	}
+
+	private appliedOutcome(
+		request: NormalizedCompressionRequest,
+		ctx: ExtensionCommandContext,
+	): AppliedCompressionOutcome | undefined {
+		if (request.kind === "range") {
+			const details = appliedRangeCompression(ctx, request.request.operationId);
+			return details ? { status: "applied", details } : undefined;
+		}
+		const details = compressionOnBranch(
+			ctx,
+			request.request.runId,
+			request.request.batch.planId,
+			request.request.batch.batchId,
+		);
+		return details ? { status: "applied", details } : undefined;
+	}
+
+	private canPrepare(request: NormalizedCompressionRequest, ctx: ExtensionCommandContext): boolean {
+		if (!ctx.isIdle() || ctx.hasPendingMessages() || !ctx.model) return false;
+		return request.kind === "range" || !!(request.request.anchorEntryId && request.request.lastSettledEntryId);
 	}
 
 	private hasApplyingOperation(sessionId: string): boolean {
@@ -456,71 +647,51 @@ class CompressionOperationCoordinator {
 		return state?.phase === phase && state.token === token;
 	}
 
-	private startRangePreparation(
-		request: Extract<RangeCompressionRequest, { action: "prepare" }>,
+	private startPreparation(
+		request: NormalizedCompressionRequest,
 		ctx: ExtensionCommandContext,
 		key: string,
-	): Promise<RangeCompressionServiceOutcome> {
-		const normalized = normalizeRangeCompressionRequest(request);
+	): Promise<CompressionOperationOutcome> {
 		const controller = new AbortController();
 		const token = Symbol();
-		const promise = (async (): Promise<RangeCompressionServiceOutcome> => {
+		const promise = (async (): Promise<CompressionOperationOutcome> => {
 			await Promise.resolve();
 			try {
-				const value = await prepareRangeCompression(ctx, {
-					operationId: request.operationId,
-					startEntryId: request.startEntryId,
-					endEntryId: request.endEntryId,
-					anchorEntryId: request.anchorEntryId,
-					instructions: request.instructions,
-					signal: controller.signal,
-				});
+				const prepared = await this.prepareOperation(request, ctx, controller.signal);
 				if (controller.signal.aborted || !this.isCurrentOperation(key, "preparing", token)) {
 					return { status: "cancelled" };
 				}
-				const approved = request.review ? await reviewRangeCompression(ctx, value) : value;
-				if (controller.signal.aborted || !this.isCurrentOperation(key, "preparing", token)) {
-					return { status: "cancelled" };
-				}
-				if (!approved) {
-					this.operations.set(key, { phase: "cancelled", request: normalized });
+				if (!prepared) {
+					this.operations.set(key, { phase: "cancelled", request });
 					return { status: "cancelled" };
 				}
 				if (
-					ctx.sessionManager.getSessionId() !== request.sessionId ||
-					ctx.sessionManager.getLeafId() !== approved.plan.sourceLeafId
+					ctx.sessionManager.getSessionId() !== request.request.sessionId ||
+					ctx.sessionManager.getLeafId() !== prepared.value.plan.sourceLeafId
 				) {
 					this.operations.delete(key);
 					return { status: "failed", code: "session_changed" };
 				}
 				this.operations.set(key, {
 					phase: "prepared",
-					request: normalizeRangeCompressionRequest(structuredClone(request)),
-					prepared: approved,
+					request: cloneNormalizedCompressionRequest(request),
+					prepared,
 				});
 				return { status: "prepared" };
 			} catch (error) {
 				const isCurrent = this.isCurrentOperation(key, "preparing", token);
 				if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
-					if (isCurrent) this.operations.set(key, { phase: "cancelled", request: normalized });
+					if (isCurrent) this.operations.set(key, { phase: "cancelled", request });
 					return { status: "cancelled" };
 				}
 				if (isCurrent) this.operations.delete(key);
-				if (
-					error instanceof RangeCompressionSessionChangedError ||
-					ctx.sessionManager.getSessionId() !== request.sessionId
-				) {
-					return { status: "failed", code: "session_changed" };
-				}
-				return error instanceof InvalidRangeCompressionRequestError
-					? { status: "failed", code: "invalid_request" }
-					: { status: "failed", code: "compression_failed" };
+				return this.failureOutcome(error, request, ctx);
 			}
 		})();
 		const preparing: PreparingCompressionOperation = {
 			phase: "preparing",
 			token,
-			request: normalized,
+			request,
 			promise,
 			controller,
 		};
@@ -528,60 +699,137 @@ class CompressionOperationCoordinator {
 		return promise;
 	}
 
-	private startRangeApply(
-		request: Extract<RangeCompressionRequest, { action: "apply" }>,
+	private async prepareOperation(
+		request: NormalizedCompressionRequest,
+		ctx: ExtensionCommandContext,
+		signal: AbortSignal,
+	): Promise<PreparedCompression | undefined> {
+		if (request.kind === "range") {
+			const input = request.request;
+			if (input.action !== "prepare") throw new Error("Range compression preparation requires prepare.");
+			const value = await prepareRangeCompression(ctx, {
+				operationId: input.operationId,
+				startEntryId: input.startEntryId,
+				endEntryId: input.endEntryId,
+				anchorEntryId: input.anchorEntryId,
+				instructions: input.instructions,
+				signal,
+			});
+			const approved = input.review ? await reviewRangeCompression(ctx, value) : value;
+			return approved ? { kind: "range", value: approved } : undefined;
+		}
+
+		const input = request.request;
+		if (!input.anchorEntryId || !input.lastSettledEntryId) {
+			throw new InvalidRangeCompressionRequestError("The batch compression request is incomplete.");
+		}
+		const target = prepareCompression(ctx, input.anchorEntryId, input.lastSettledEntryId, input.operationId);
+		const range = await prepareRangeCompression(ctx, {
+			operationId: input.operationId,
+			startEntryId: target.startEntryId,
+			endEntryId: target.endEntryId,
+			anchorEntryId: target.anchorId,
+			signal,
+		});
+		let summary = range.summary;
+		if (input.review !== false) {
+			summary = (await ctx.ui.editor("Review completed batch summary", summary))?.trim() ?? "";
+		}
+		if (!summary) return undefined;
+		return {
+			kind: "batch",
+			value: {
+				plan: { ...target, ...range.plan },
+				summary,
+				taskMessage: target.taskMessage,
+			},
+		};
+	}
+
+	private startApply(
+		request: NormalizedCompressionRequest,
 		ctx: ExtensionCommandContext,
 		key: string,
 		prepared: PreparedCompressionOperation,
-	): Promise<RangeCompressionServiceOutcome> {
-		const normalized = normalizeRangeCompressionRequest(request);
+	): Promise<CompressionOperationOutcome> {
 		const token = Symbol();
-		const promise = (async (): Promise<RangeCompressionServiceOutcome> => {
+		const promise = (async (): Promise<CompressionOperationOutcome> => {
 			await Promise.resolve();
 			try {
-				const details = await applyPreparedRangeCompression(this.pi, ctx, prepared.prepared);
-				if (!details) {
+				const outcome = await this.applyOperation(request, ctx, prepared.prepared);
+				if (outcome.status === "cancelled") {
 					if (this.isCurrentOperation(key, "applying", token)) {
-						this.operations.set(key, { phase: "cancelled", request: normalized });
+						this.operations.set(key, { phase: "cancelled", request });
 					}
-					return { status: "cancelled" };
+					return outcome;
 				}
 				if (this.isCurrentOperation(key, "applying", token)) this.operations.delete(key);
-				return { status: "applied", details };
+				return outcome;
 			} catch (error) {
 				if (this.isCurrentOperation(key, "applying", token)) this.operations.set(key, prepared);
-				if (
-					error instanceof RangeCompressionSessionChangedError ||
-					ctx.sessionManager.getSessionId() !== request.sessionId
-				) {
-					return { status: "failed", code: "session_changed" };
-				}
-				return error instanceof InvalidRangeCompressionRequestError
-					? { status: "failed", code: "invalid_request" }
-					: { status: "failed", code: "compression_failed" };
+				return this.failureOutcome(error, request, ctx);
 			}
 		})();
-		const applying: ApplyingCompressionOperation = { phase: "applying", token, request: normalized, promise };
+		const applying: ApplyingCompressionOperation = { phase: "applying", token, request, promise };
 		this.operations.set(key, applying);
 		return promise;
 	}
+
+	private async applyOperation(
+		request: NormalizedCompressionRequest,
+		ctx: ExtensionCommandContext,
+		prepared: PreparedCompression,
+	): Promise<CompressionApplyOutcome> {
+		if (request.kind === "range" && prepared.kind === "range") {
+			const details = await applyPreparedRangeCompression(this.pi, ctx, prepared.value);
+			return details ? { status: "applied", details } : { status: "cancelled" };
+		}
+		if (request.kind === "batch" && prepared.kind === "batch") {
+			const details = await applyCompression(
+				this.pi,
+				ctx,
+				request.request.runId,
+				request.request.batch,
+				prepared.value.plan,
+				prepared.value.summary,
+			);
+			return { status: "applied", details };
+		}
+		throw new Error("Compression operation kind changed.");
+	}
+
+	private failureOutcome(
+		error: unknown,
+		request: NormalizedCompressionRequest,
+		ctx: ExtensionCommandContext,
+	): CompressionOperationOutcome {
+		if (
+			error instanceof RangeCompressionSessionChangedError ||
+			ctx.sessionManager.getSessionId() !== request.request.sessionId
+		) {
+			return { status: "failed", code: "session_changed" };
+		}
+		return error instanceof InvalidRangeCompressionRequestError
+			? { status: "failed", code: "invalid_request" }
+			: { status: "failed", code: "compression_failed" };
+	}
 }
 
-export function registerRangeCompressionService(pi: ExtensionAPI): void {
-	const coordinator = new CompressionOperationCoordinator(pi);
-
+function registerCoordinatorShutdown(pi: ExtensionAPI, coordinator: CompressionOperationCoordinator): void {
 	pi.on("session_shutdown", (_event, ctx) => {
 		coordinator.clearSession(ctx.sessionManager.getSessionId());
 	});
+}
 
+function registerRangeCompressionAdapter(pi: ExtensionAPI, coordinator: CompressionOperationCoordinator): void {
 	pi.events.on(RANGE_COMPRESSION_REQUEST, async (value: unknown) => {
 		const transport = value as Partial<RangeCompressionTransport> | undefined;
 		if (!transport || !Value.Check(RangeCompressionRequestSchema, transport.request)) return;
 		const request = transport.request;
 		let outcome: RangeCompressionServiceOutcome;
 		try {
-			outcome = isRangeCompressionContext(transport.context)
-				? await coordinator.executeRange(request, transport.context)
+			outcome = isCompressionContext(transport.context)
+				? await coordinator.execute(normalizeRangeCompressionRequest(request), transport.context)
 				: { status: "failed", code: "session_changed" };
 		} catch {
 			outcome = { status: "failed", code: "compression_failed" };
@@ -595,6 +843,49 @@ export function registerRangeCompressionService(pi: ExtensionAPI): void {
 		} satisfies RangeCompressionResult;
 		if (Value.Check(RangeCompressionResultSchema, result)) pi.events.emit(RANGE_COMPRESSION_RESULT, result);
 	});
+}
+
+function registerBatchCompressionAdapter(pi: ExtensionAPI, coordinator: CompressionOperationCoordinator): void {
+	pi.events.on(COMPRESSION_REQUEST, async (value: unknown) => {
+		const transport = value as { request?: unknown; context?: unknown } | undefined;
+		if (!transport || !Value.Check(CompressionRequestSchema, transport.request)) return;
+		const request = transport.request;
+		let outcome: BatchCompressionServiceOutcome;
+		try {
+			outcome = isCompressionContext(transport.context)
+				? await coordinator.execute(normalizeBatchCompressionRequest(request), transport.context)
+				: { status: "failed", code: "session_changed" };
+		} catch {
+			outcome = { status: "failed", code: "compression_failed" };
+		}
+		const result: CompressionResult = {
+			v: 1,
+			requestId: request.requestId,
+			sessionId: request.sessionId,
+			operationId: request.operationId,
+			...outcome,
+		};
+		if (Value.Check(CompressionResultSchema, result)) pi.events.emit(COMPRESSION_RESULT, result);
+	});
+}
+
+export function registerRangeCompressionService(pi: ExtensionAPI): void {
+	const coordinator = new CompressionOperationCoordinator(pi);
+	registerCoordinatorShutdown(pi, coordinator);
+	registerRangeCompressionAdapter(pi, coordinator);
+}
+
+export function registerBatchCompression(pi: ExtensionAPI): void {
+	const coordinator = new CompressionOperationCoordinator(pi);
+	registerCoordinatorShutdown(pi, coordinator);
+	registerBatchCompressionAdapter(pi, coordinator);
+}
+
+export function registerCompressionServices(pi: ExtensionAPI): void {
+	const coordinator = new CompressionOperationCoordinator(pi);
+	registerCoordinatorShutdown(pi, coordinator);
+	registerRangeCompressionAdapter(pi, coordinator);
+	registerBatchCompressionAdapter(pi, coordinator);
 }
 
 async function prepareWithLoader(
