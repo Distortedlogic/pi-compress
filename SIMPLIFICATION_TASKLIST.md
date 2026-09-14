@@ -261,8 +261,8 @@ interface ForkInfo {
 
 **Files:** `src/panel.ts`, `src/branches.ts`, `src/compression.ts`, `src/range-compression.ts`, new `src/ambient.ts`
 
-- [ ] Create `src/ambient.ts`.
-- [ ] Move these items from `panel.ts` to `ambient.ts`:
+- [x] Create `src/ambient.ts`.
+- [x] Move these items from `panel.ts` to `ambient.ts`:
   - Gauge input type.
   - Gauge band styling.
   - `renderGauge()`.
@@ -272,26 +272,26 @@ interface ForkInfo {
   - `nudgeOnRed()`.
   - `refreshAmbient()`.
   - `registerAmbient()`.
-- [ ] Make `ambient.ts` read fork state from `context.ts`, not from `branches.ts`.
-- [ ] Remove the unused `ExtensionAPI` parameter from `refreshAmbient()`.
-- [ ] Update all calls to use `refreshAmbient(ctx)`.
-- [ ] Reset `warnedRed` in `resetAmbient()`.
-- [ ] Remove the dead estimated-versus-exact trend state:
+- [x] Make `ambient.ts` read fork state from `context.ts`, not from `branches.ts`.
+- [x] Remove the unused `ExtensionAPI` parameter from `refreshAmbient()`.
+- [x] Update all calls to use `refreshAmbient(ctx)`.
+- [x] Reset `warnedRed` in `resetAmbient()`.
+- [x] Remove the dead estimated-versus-exact trend state:
   - Delete `lastEstimated`.
   - Delete the `estimated` argument from `trendMarker()`.
   - Delete known-token label branches that can never receive estimated tokens.
-- [ ] Keep the unknown post-compaction display when context tokens are `null`.
-- [ ] Make `panel.ts` import `renderGauge()` from `ambient.ts`.
-- [ ] Make branch, crop, and range modules import `refreshAmbient()` from `ambient.ts`.
-- [ ] Confirm that `ambient.ts` imports no mutation or panel module.
+- [x] Keep the unknown post-compaction display when context tokens are `null`.
+- [x] Make `panel.ts` import `renderGauge()` from `ambient.ts`.
+- [x] Make branch, crop, and range modules import `refreshAmbient()` from `ambient.ts`.
+- [x] Confirm that `ambient.ts` imports no mutation or panel module.
 
 ### Acceptance gate
 
-- [ ] `branches.ts` no longer imports `panel.ts`.
-- [ ] `range-compression.ts` no longer imports ambient functions from `panel.ts`.
-- [ ] Gauge labels, warning thresholds, footer status, and title behavior remain available.
-- [ ] A new session can show the red warning again because all ambient state resets.
-- [ ] `npm test` and `npm run check` pass.
+- [x] `branches.ts` no longer imports `panel.ts`.
+- [x] `range-compression.ts` no longer imports ambient functions from `panel.ts`.
+- [x] Gauge labels, warning thresholds, footer status, and title behavior remain available.
+- [x] A new session can show the red warning again because all ambient state resets.
+- [x] `npm test` and `npm run check` pass.
 
 ---
 

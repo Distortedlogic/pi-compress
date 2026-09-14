@@ -8,6 +8,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { minimatch } from "minimatch";
 import parseArgs from "yargs-parser";
+import { refreshAmbient } from "./ambient.ts";
 import {
 	type SessionSnapshot,
 	deriveState,
@@ -23,7 +24,6 @@ import {
 	prepareRewrite,
 	rangeCandidates,
 } from "./core/range-rewrite.ts";
-import { refreshAmbient } from "./panel.ts";
 import { CTREE_CROP, CTREE_CROP_TAIL, type CtreeCropDrop, type CtreeCropStub } from "./protocol.ts";
 
 export interface CropCandidate {
@@ -359,7 +359,7 @@ export async function applyCropPlan(pi: ExtensionAPI, ctx: ExtensionCommandConte
 		ctx.ui.notify(`${(error as Error).message} re-run /crop (nothing written)`, "warning");
 		return;
 	}
-	refreshAmbient(pi, ctx);
+	refreshAmbient(ctx);
 	ctx.ui.notify(cropAppliedMessage(plan), "info");
 }
 

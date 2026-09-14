@@ -8,9 +8,9 @@ import type {
 	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import parseArgs from "yargs-parser";
+import { refreshAmbient } from "./ambient.ts";
 import { type ForkInfo, type SessionState, decisionsOnPath, deriveState, serializeEntries } from "./context.ts";
 import { DRAFT_SYSTEM_PROMPT, type DraftFn, draftUserPrompt, modelKey, resolveModel } from "./extension/draft.ts";
-import { refreshAmbient } from "./panel.ts";
 import {
 	CTREE_CLOSE,
 	CTREE_DECISION,
@@ -208,7 +208,7 @@ export async function branchHandler(pi: ExtensionAPI, ctx: ExtensionCommandConte
 		if (!changed) ctx.ui.notify(`no API key for ${modelKey(branchModel)} — staying on ${trunkModel}`, "warning");
 	}
 
-	refreshAmbient(pi, ctx);
+	refreshAmbient(ctx);
 	ctx.ui.notify(
 		`⎇ branched: ${name}${branchModel ? ` on ${modelKey(branchModel)}` : ""} — /merge squashes it back to this point`,
 		"info",
@@ -344,7 +344,7 @@ export async function mergeHandler(
 			prevLeafId: state.leafId,
 		});
 		await restoreTrunkModel(pi, ctx, fork);
-		refreshAmbient(pi, ctx);
+		refreshAmbient(ctx);
 		ctx.ui.notify(`⎇ discarded ${fork.data.name} — back at the label, nothing injected (history kept)`, "info");
 		return;
 	}
@@ -430,7 +430,7 @@ export async function mergeHandler(
 		}
 	}
 	await restoreTrunkModel(pi, ctx, fork);
-	refreshAmbient(pi, ctx);
+	refreshAmbient(ctx);
 	ctx.ui.notify(
 		mode === "tournament"
 			? `⎇ tournament: ${fork.data.name} won — 1 combined record, ${rejected.length} epitaph(s), siblings closed`
@@ -504,7 +504,7 @@ export async function undoHandler(pi: ExtensionAPI, ctx: ExtensionCommandContext
 		ctx.ui.notify("undo aborted — navigation cancelled, nothing changed", "warning");
 		return;
 	}
-	refreshAmbient(pi, ctx);
+	refreshAmbient(ctx);
 	ctx.ui.notify(`↩ undone — ${step.describe}`, "info");
 }
 

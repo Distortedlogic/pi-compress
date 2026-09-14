@@ -8,6 +8,7 @@ import {
 	TreeSelectorComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
+import { refreshAmbient } from "./ambient.ts";
 import { estimateTextTokens, fmtTokens, serializeEntry, snapshotSession } from "./context.ts";
 import {
 	type RangeCandidate,
@@ -20,7 +21,6 @@ import {
 	sourceSha8,
 } from "./core/range-rewrite.ts";
 import { draftRangeSummary, realDraft } from "./extension/draft.ts";
-import { refreshAmbient } from "./panel.ts";
 import {
 	CTREE_RANGE_COMPACT,
 	CTREE_RANGE_TAIL,
@@ -705,7 +705,7 @@ export async function rangeCompressHandler(
 			ctx.ui.notify("range compression cancelled during navigation — nothing written", "warning");
 			return;
 		}
-		refreshAmbient(pi, ctx);
+		refreshAmbient(ctx);
 		ctx.ui.notify(
 			`compressed range: selected ~${fmtTokens(details.selectedEstTokens)} · summary ~${fmtTokens(details.summaryEstTokens)} · reclaimed ~${fmtTokens(details.reclaimedEstTokens)} tokens · originals kept at ${details.sourceLeafId}`,
 			"info",

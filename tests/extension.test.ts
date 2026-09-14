@@ -15,6 +15,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Component, visibleWidth } from "@earendil-works/pi-tui";
 import { beforeEach, describe, expect, it } from "vitest";
+import { refreshAmbient, registerAmbient, resetAmbient } from "../src/ambient.ts";
 import { registerBatchCompression } from "../src/batch.ts";
 import {
 	branchHandler,
@@ -31,14 +32,7 @@ import { estimateEntryTokens, snapshotSession } from "../src/context.ts";
 import { applyRewrite, prepareRewrite, rangeCandidates, revalidateRewrite } from "../src/core/range-rewrite.ts";
 import type { DraftFn } from "../src/extension/draft.ts";
 import piContextCompress from "../src/index.ts";
-import {
-	ContextPanel,
-	buildPanelInput,
-	refreshAmbient,
-	registerAmbient,
-	registerPanel,
-	resetAmbient,
-} from "../src/panel.ts";
+import { ContextPanel, buildPanelInput, registerPanel } from "../src/panel.ts";
 import {
 	type BatchSnapshot,
 	COMPRESSION_ENTRY,
@@ -1379,7 +1373,7 @@ describe("ambient and panel behavior", () => {
 	it("keeps status, title, gauge, trend, red warning, and compact warning", () => {
 		const value = world();
 		value.session.user("root");
-		refreshAmbient(value.pi, value.ctx);
+		refreshAmbient(value.ctx);
 		expect(value.ui.statuses.get("ctree")).toBe("⎇ trunk · ctx 15.0% filling");
 		expect(value.ui.widgets.get("ctree-gauge")?.[0]).toContain("15.0% filling");
 		(value.ctx as unknown as { getContextUsage: () => unknown }).getContextUsage = () => ({
@@ -1387,10 +1381,15 @@ describe("ambient and panel behavior", () => {
 			contextWindow: 200_000,
 			percent: 41,
 		});
-		refreshAmbient(value.pi, value.ctx);
+		refreshAmbient(value.ctx);
 		expect(value.ui.statuses.get("ctree")).toContain("▲ +26%");
 		expect(value.ui.notifications.some((item) => item.message.includes("/compress"))).toBe(true);
+		const redWarnings = value.ui.notifications.filter((item) => item.message.includes("context crossed")).length;
 		registerAmbient(value.pi);
+		for (const handler of value.handlers.get("session_start") ?? []) handler({}, value.ctx);
+		expect(value.ui.notifications.filter((item) => item.message.includes("context crossed"))).toHaveLength(
+			redWarnings + 1,
+		);
 		for (const handler of value.handlers.get("session_before_compact") ?? []) handler({}, value.ctx);
 		expect(value.ui.notifications.some((item) => item.message.includes("/compact"))).toBe(true);
 	});
@@ -1399,7 +1398,7 @@ describe("ambient and panel behavior", () => {
 		const value = world();
 		(value.ctx as unknown as { mode: string }).mode = "print";
 		value.session.user("root");
-		refreshAmbient(value.pi, value.ctx);
+		refreshAmbient(value.ctx);
 		expect(value.ui.widgets.size).toBe(0);
 	});
 
