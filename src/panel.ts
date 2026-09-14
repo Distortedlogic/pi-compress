@@ -21,17 +21,7 @@ import {
 	matchesKey,
 	truncateToWidth,
 } from "@earendil-works/pi-tui";
-import {
-	type ForkInfo,
-	branchHandler,
-	decisionsOnPath,
-	deriveState,
-	exportDecisions,
-	mergeHandler,
-	nearestOpenFork,
-	notifyDecisions,
-	parseDecisionArgs,
-} from "./branches.ts";
+import { branchHandler, exportDecisions, mergeHandler, notifyDecisions, parseDecisionArgs } from "./branches.ts";
 import {
 	type ContextTurn,
 	type CropCandidate,
@@ -43,9 +33,20 @@ import {
 	planCrop,
 	planRemoveTurns,
 } from "./compression.ts";
-import { aggregateConsumers } from "./core/consumers.ts";
-import { BAND_THRESHOLDS, type Band, band, estimateEntryTokens, fmtTokens } from "./core/estimate.ts";
-import { serializeEntry } from "./core/serialize.ts";
+import {
+	BAND_THRESHOLDS,
+	type Band,
+	type ForkInfo,
+	type SessionSnapshot,
+	aggregateConsumers,
+	band,
+	decisionsOnPath,
+	deriveState,
+	estimateEntryTokens,
+	fmtTokens,
+	nearestOpenFork,
+	serializeEntry,
+} from "./context.ts";
 import type { DraftFn } from "./extension/draft.ts";
 import {
 	CTREE_DECISION,
@@ -53,7 +54,6 @@ import {
 	ctreeDecisionDetails,
 	parseCtreeDecisionDetails,
 } from "./protocol.ts";
-import type { SessionSnapshot } from "./session.ts";
 
 type PiTheme = ExtensionContext["ui"]["theme"];
 type NativeTree = ReturnType<ExtensionContext["sessionManager"]["getTree"]>;

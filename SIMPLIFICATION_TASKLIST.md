@@ -211,12 +211,12 @@ Add cases to the current test suites. Do not create a second test harness.
 
 **Files:** `src/session.ts`, `src/core/estimate.ts`, `src/core/serialize.ts`, `src/core/consumers.ts`, `src/branches.ts`, consumers of those modules
 
-- [ ] Create `src/context.ts`.
-- [ ] Move session snapshot types and functions from `src/session.ts` into `src/context.ts`.
-- [ ] Move token estimation and gauge band functions from `src/core/estimate.ts` into `src/context.ts`.
-- [ ] Move entry serialization from `src/core/serialize.ts` into `src/context.ts`.
-- [ ] Move consumer aggregation from `src/core/consumers.ts` into `src/context.ts`.
-- [ ] Move these read-only branch projections from `branches.ts` into `context.ts`:
+- [x] Create `src/context.ts`.
+- [x] Move session snapshot types and functions from `src/session.ts` into `src/context.ts`.
+- [x] Move token estimation and gauge band functions from `src/core/estimate.ts` into `src/context.ts`.
+- [x] Move entry serialization from `src/core/serialize.ts` into `src/context.ts`.
+- [x] Move consumer aggregation from `src/core/consumers.ts` into `src/context.ts`.
+- [x] Move these read-only branch projections from `branches.ts` into `context.ts`:
   - `ForkStatus`
   - `ForkInfo`
   - `SessionState`
@@ -224,7 +224,7 @@ Add cases to the current test suites. Do not create a second test harness.
   - `nearestOpenFork()`
   - `decisionsOnPath()`
   - `deriveState()`
-- [ ] Reduce `ForkInfo` to the fields used by runtime behavior:
+- [x] Reduce `ForkInfo` to the fields used by runtime behavior:
 
 ```ts
 interface ForkInfo {
@@ -234,24 +234,24 @@ interface ForkInfo {
 }
 ```
 
-- [ ] Delete `ForkPresentation`.
-- [ ] Delete the unused `entry`, `close`, `presentation`, `onCurrentPath`, and `depth` calculations.
-- [ ] Replace deep clones in `snapshotSession()` with the arrays and defensive tree returned by `ReadonlySessionManager`.
-- [ ] Keep rewrite safety through copied ID arrays, serialized source, the source hash, session ID checks, and leaf checks.
-- [ ] Update all source and existing test imports in one change.
-- [ ] Delete these old files after all imports move:
+- [x] Delete `ForkPresentation`.
+- [x] Delete the unused `entry`, `close`, `presentation`, `onCurrentPath`, and `depth` calculations.
+- [x] Replace deep clones in `snapshotSession()` with the arrays and defensive tree returned by `ReadonlySessionManager`.
+- [x] Keep rewrite safety through copied ID arrays, serialized source, the source hash, session ID checks, and leaf checks.
+- [x] Update all source and existing test imports in one change.
+- [x] Delete these old files after all imports move:
   - `src/session.ts`
   - `src/core/estimate.ts`
   - `src/core/serialize.ts`
   - `src/core/consumers.ts`
-- [ ] Remove `src/core/` only after `range-rewrite.ts` moves in WU-06.
+- [x] Remove `src/core/` only after `range-rewrite.ts` moves in WU-06.
 
 ### Acceptance gate
 
-- [ ] Context snapshots do not deep-copy large message and tool-result bodies.
-- [ ] Fork status, current-fork selection, token estimates, serialization, and consumer totals are unchanged.
-- [ ] No deleted module remains in an import.
-- [ ] `npm test`, `npm run check`, and `npm run knip` pass.
+- [x] Context snapshots do not deep-copy large message and tool-result bodies.
+- [x] Fork status, current-fork selection, token estimates, serialization, and consumer totals are unchanged.
+- [x] No deleted module remains in an import.
+- [x] `npm test`, `npm run check`, and `npm run knip` pass.
 
 ---
 

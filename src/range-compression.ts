@@ -8,7 +8,7 @@ import {
 	TreeSelectorComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
-import { estimateTextTokens, fmtTokens } from "./core/estimate.ts";
+import { estimateTextTokens, fmtTokens, serializeEntry, snapshotSession } from "./context.ts";
 import {
 	type RangeCandidate,
 	type RewritePlan,
@@ -19,7 +19,6 @@ import {
 	revalidateRewrite,
 	sourceSha8,
 } from "./core/range-rewrite.ts";
-import { serializeEntry } from "./core/serialize.ts";
 import { draftRangeSummary, realDraft } from "./extension/draft.ts";
 import { refreshAmbient } from "./panel.ts";
 import {
@@ -37,7 +36,6 @@ import {
 	type RangeCompressionTransport,
 	ctreeRangeCompactData,
 } from "./protocol.ts";
-import { snapshotSession } from "./session.ts";
 
 export interface RangeCompressionTarget {
 	readonly operationId: string;

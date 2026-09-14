@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
 import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import {
+	type SessionSnapshot,
+	estimateEntryTokens,
+	serializeEntries,
+	snapshotEntry,
+	snapshotSession,
+} from "../context.ts";
 import { CTREE_DECISION } from "../protocol.ts";
-import { type SessionSnapshot, snapshotEntry, snapshotSession } from "../session.ts";
-import { estimateEntryTokens } from "./estimate.ts";
-import { serializeEntries } from "./serialize.ts";
 
 export interface RangeCandidate {
 	id: string;

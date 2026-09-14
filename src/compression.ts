@@ -8,8 +8,14 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { minimatch } from "minimatch";
 import parseArgs from "yargs-parser";
-import { deriveState } from "./branches.ts";
-import { estimateEntryTokens, fmtTokens } from "./core/estimate.ts";
+import {
+	type SessionSnapshot,
+	deriveState,
+	estimateEntryTokens,
+	fmtTokens,
+	serializeEntry,
+	snapshotEntry,
+} from "./context.ts";
 import {
 	type RewritePlan,
 	applyRewrite,
@@ -17,10 +23,8 @@ import {
 	prepareRewrite,
 	rangeCandidates,
 } from "./core/range-rewrite.ts";
-import { serializeEntry } from "./core/serialize.ts";
 import { refreshAmbient } from "./panel.ts";
 import { CTREE_CROP, CTREE_CROP_TAIL, type CtreeCropDrop, type CtreeCropStub } from "./protocol.ts";
-import { type SessionSnapshot, snapshotEntry } from "./session.ts";
 
 export interface CropCandidate {
 	entryId: string;

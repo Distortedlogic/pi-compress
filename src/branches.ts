@@ -2,24 +2,19 @@ import { writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { contentText } from "@earendil-works/pi-ai";
 import type {
-	CustomEntry,
-	CustomMessageEntry,
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionContext,
 	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import parseArgs from "yargs-parser";
-import { serializeEntries } from "./core/serialize.ts";
+import { type ForkInfo, type SessionState, decisionsOnPath, deriveState, serializeEntries } from "./context.ts";
 import { DRAFT_SYSTEM_PROMPT, type DraftFn, draftUserPrompt, modelKey, resolveModel } from "./extension/draft.ts";
 import { refreshAmbient } from "./panel.ts";
 import {
 	CTREE_CLOSE,
 	CTREE_DECISION,
 	CTREE_FORK,
-	type CtreeCloseData,
-	type CtreeCloseStatus,
-	type CtreeForkData,
 	compressionDetails,
 	ctreeCloseData,
 	ctreeCropData,
@@ -27,26 +22,6 @@ import {
 	ctreeForkData,
 	ctreeRangeCompactData,
 } from "./protocol.ts";
-import { type SessionSnapshot, snapshotSession } from "./session.ts";
-
-type ForkStatus = "open" | CtreeCloseStatus;
-type ForkPresentation = "active" | "dangling" | "squashed" | "rejected";
-
-export interface ForkInfo {
-	entryId: string;
-	entry: CustomEntry;
-	data: CtreeForkData;
-	close?: { entryId: string; data: CtreeCloseData };
-	status: ForkStatus;
-	presentation: ForkPresentation;
-	onCurrentPath: boolean;
-	depth: number;
-}
-
-export interface SessionState extends SessionSnapshot {
-	forks: ForkInfo[];
-	currentFork: ForkInfo | undefined;
-}
 
 export interface DecisionDraft {
 	branchName: string;
@@ -68,7 +43,6 @@ export interface DecisionArgs {
 	exportPath?: string;
 }
 
-type SessionManagerView = ExtensionContext["sessionManager"];
 type MergeMode = "squash" | "no-llm" | "discard" | "tournament";
 
 const NAME_RE = /^[a-z0-9][a-z0-9._-]*$/i;
@@ -80,31 +54,6 @@ const ARGUMENT_CONFIGURATION = {
 } as const;
 let modelReferences: string[] = [];
 
-function extractForks(session: SessionManagerView): ForkInfo[] {
-	const entries = session.getEntries();
-	const closes = new Map<string, { entryId: string; data: CtreeCloseData }>();
-	for (const entry of entries) {
-		const close = ctreeCloseData(entry);
-		if (close) closes.set(close.forkEntryId, { entryId: entry.id, data: close });
-	}
-
-	const currentBranchIds = new Set(session.getBranch().map((entry) => entry.id));
-	const forks: ForkInfo[] = [];
-	for (const entry of entries) {
-		if (entry.type !== "custom") continue;
-		const data = ctreeForkData(entry);
-		if (!data) continue;
-		const close = closes.get(entry.id);
-		const status: ForkStatus = close ? close.data.status : "open";
-		const onCurrentPath = currentBranchIds.has(entry.id);
-		const presentation: ForkPresentation =
-			status === "open" ? (onCurrentPath ? "active" : "dangling") : status === "squashed" ? "squashed" : "rejected";
-		const depth = session.getBranch(entry.id).filter((parent) => ctreeForkData(parent)).length;
-		forks.push({ entryId: entry.id, entry, data, close, status, presentation, onCurrentPath, depth });
-	}
-	return forks;
-}
-
 function siblingForks(forks: ForkInfo[], forkEntryId: string): ForkInfo[] {
 	const selected = forks.find((fork) => fork.entryId === forkEntryId);
 	if (!selected) return [];
@@ -112,29 +61,6 @@ function siblingForks(forks: ForkInfo[], forkEntryId: string): ForkInfo[] {
 		(fork) =>
 			fork.entryId !== forkEntryId && fork.status === "open" && fork.data.parentEntryId === selected.data.parentEntryId,
 	);
-}
-
-export function nearestOpenFork(branch: readonly SessionEntry[], forks: ForkInfo[]): ForkInfo | undefined {
-	const byId = new Map(forks.map((fork) => [fork.entryId, fork]));
-	for (let index = branch.length - 1; index >= 0; index--) {
-		const entry = branch[index];
-		if (!entry) continue;
-		const fork = byId.get(entry.id);
-		if (fork?.status === "open") return fork;
-	}
-	return undefined;
-}
-
-export function decisionsOnPath(branch: readonly SessionEntry[]): CustomMessageEntry[] {
-	return branch.filter(
-		(entry): entry is CustomMessageEntry => entry.type === "custom_message" && entry.customType === CTREE_DECISION,
-	);
-}
-
-export function deriveState(ctx: ExtensionContext): SessionState {
-	const snapshot = snapshotSession(ctx.sessionManager);
-	const forks = extractForks(ctx.sessionManager);
-	return { ...snapshot, forks, currentFork: nearestOpenFork(snapshot.branch, forks) };
 }
 
 function branchEntries(state: SessionState, forkEntryId: string): SessionEntry[] {

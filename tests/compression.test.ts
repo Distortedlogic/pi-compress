@@ -18,8 +18,14 @@ import {
 	planRemoveTurns,
 	renderReconstruction,
 } from "../src/compression.ts";
-import { aggregateConsumers } from "../src/core/consumers.ts";
-import { band, estimateEntryTokens, fmtTokens } from "../src/core/estimate.ts";
+import {
+	aggregateConsumers,
+	band,
+	estimateEntryTokens,
+	fmtTokens,
+	serializeEntries,
+	snapshotSession,
+} from "../src/context.ts";
 import {
 	applyRewrite,
 	candidateByEntryId,
@@ -28,7 +34,6 @@ import {
 	resolveRangeEndpoint,
 	sourceSha8,
 } from "../src/core/range-rewrite.ts";
-import { serializeEntries } from "../src/core/serialize.ts";
 import {
 	type BatchSnapshot,
 	COMPRESSION_ENTRY,
@@ -62,7 +67,6 @@ import {
 	renderRangeTail,
 	reviewRangeCompression,
 } from "../src/range-compression.ts";
-import { snapshotSession } from "../src/session.ts";
 
 initTheme("dark");
 

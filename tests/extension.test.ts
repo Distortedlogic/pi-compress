@@ -27,7 +27,7 @@ import {
 	undoHandler,
 } from "../src/branches.ts";
 import { applyCropPlan, cropHandler, planCrop } from "../src/compression.ts";
-import { estimateEntryTokens } from "../src/core/estimate.ts";
+import { estimateEntryTokens, snapshotSession } from "../src/context.ts";
 import { applyRewrite, prepareRewrite, rangeCandidates, revalidateRewrite } from "../src/core/range-rewrite.ts";
 import type { DraftFn } from "../src/extension/draft.ts";
 import piContextCompress from "../src/index.ts";
@@ -68,7 +68,6 @@ import {
 	rangeCompressHandler,
 	registerRangeCompressionService,
 } from "../src/range-compression.ts";
-import { snapshotSession } from "../src/session.ts";
 
 initTheme("dark");
 

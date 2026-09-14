@@ -9,6 +9,7 @@ import type {
 	SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
+import { snapshotSession } from "./context.ts";
 import {
 	type RewritePlan,
 	applyRewrite,
@@ -31,7 +32,6 @@ import {
 	QUEUED_TASK_TAIL,
 	compressionDetails,
 } from "./protocol.ts";
-import { snapshotSession } from "./session.ts";
 
 export interface CompressionPlan extends RewritePlan {
 	operationId: string;
