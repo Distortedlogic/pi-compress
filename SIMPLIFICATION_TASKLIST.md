@@ -8,12 +8,12 @@ Reduce the extension from 13 source files to about 10 source files. Remove dupli
 
 Do not start a work unit until its dependencies and acceptance gates are complete.
 
-- [ ] Keep these package exports working:
+- [x] Keep these package exports working:
   - `.` → `src/index.ts`
   - `./protocol` → `src/protocol.ts`
   - `./range-compression` → `src/range-compression.ts`
-- [ ] Keep the existing named exports from `src/range-compression.ts`, or re-export them from that file after an internal move.
-- [ ] Keep these commands and their behavior:
+- [x] Keep the existing named exports from `src/range-compression.ts`, or re-export them from that file after an internal move.
+- [x] Keep these commands and their behavior:
   - `/branch`
   - `/merge`
   - `/crop`
@@ -21,25 +21,25 @@ Do not start a work unit until its dependencies and acceptance gates are complet
   - `/panel`
   - `/decisions`
   - `/undo`
-- [ ] Keep `Ctrl+Q` as the panel shortcut.
-- [ ] Keep all current event channels:
+- [x] Keep `Ctrl+Q` as the panel shortcut.
+- [x] Keep all current event channels:
   - `pi-context-compress/v1/range/request`
   - `pi-context-compress/v1/range/result`
   - `pi-context-compress/v1/request`
   - `pi-context-compress/v1/result`
-- [ ] Keep stored custom-type identifiers, including all `ctree/*`, `pi-context-compress/*`, and `pi-workstream/compression` values.
-- [ ] Keep all protocol and details version values.
-- [ ] Keep append-only mutation. Never delete or rewrite source session entries.
-- [ ] Keep original source ranges recoverable at their old leaves.
-- [ ] Keep source hash and session-leaf revalidation before every apply operation.
-- [ ] Keep assistant tool-call groups and their tool results atomic.
-- [ ] Keep decision records, structural summaries, metadata, incomplete turns, and unsafe tool-result groups protected from range selection.
-- [ ] Keep required human review for interactive range compression and the current review option for protocol requests.
-- [ ] Keep idempotent prepare, status, apply, and cancel behavior.
-- [ ] Keep current failure codes and their meanings.
-- [ ] Keep model restoration after branch merge or discard.
-- [ ] Keep non-TUI behavior for commands that currently support it.
-- [ ] Keep existing old-session parsing behavior.
+- [x] Keep stored custom-type identifiers, including all `ctree/*`, `pi-context-compress/*`, and `pi-workstream/compression` values.
+- [x] Keep all protocol and details version values.
+- [x] Keep append-only mutation. Never delete or rewrite source session entries.
+- [x] Keep original source ranges recoverable at their old leaves.
+- [x] Keep source hash and session-leaf revalidation before every apply operation.
+- [x] Keep assistant tool-call groups and their tool results atomic.
+- [x] Keep decision records, structural summaries, metadata, incomplete turns, and unsafe tool-result groups protected from range selection.
+- [x] Keep required human review for interactive range compression and the current review option for protocol requests.
+- [x] Keep idempotent prepare, status, apply, and cancel behavior.
+- [x] Keep current failure codes and their meanings.
+- [x] Keep model restoration after branch merge or discard.
+- [x] Keep non-TUI behavior for commands that currently support it.
+- [x] Keep existing old-session parsing behavior.
 
 ## Target source layout
 
@@ -573,15 +573,15 @@ Build one domain-specific coordinator. Do not build a reusable workflow framewor
 
 **Files:** All touched files and existing tests
 
-- [ ] Run Knip against the corrected package entry list.
-- [ ] Remove only exports, functions, fields, imports, and types that Knip and direct source review confirm are unused.
-- [ ] Remove `resetModelCompletions()` if no recorded public or existing test consumer needs it.
-- [ ] Remove small pass-through helpers that do not enforce an invariant.
-- [ ] Keep domain helpers that define safety or behavior boundaries.
-- [ ] Confirm that no deleted path remains in source, tests, package metadata, or documentation.
-- [ ] Confirm that no circular import remains in the target dependency graph.
-- [ ] Format touched files with the repository formatter.
-- [ ] Run:
+- [x] Run Knip against the corrected package entry list.
+- [x] Remove only exports, functions, fields, imports, and types that Knip and direct source review confirm are unused.
+- [x] Remove `resetModelCompletions()` if no recorded public or existing test consumer needs it.
+- [x] Remove small pass-through helpers that do not enforce an invariant.
+- [x] Keep domain helpers that define safety or behavior boundaries.
+- [x] Confirm that no deleted path remains in source, tests, package metadata, or documentation.
+- [x] Confirm that no circular import remains in the target dependency graph.
+- [x] Format touched files with the repository formatter.
+- [x] Run:
 
 ```text
 npm test
@@ -591,38 +591,38 @@ npm run knip
 npm pack --dry-run
 ```
 
-- [ ] Test extension startup in Pi.
-- [ ] Test `/branch`, `/merge`, `/crop`, `/compress`, `/panel`, `/decisions`, and `/undo` in one disposable session.
-- [ ] Test Ctrl+Q and confirm that it opens the actionable panel without an LLM request.
-- [ ] Test range prepare, status, apply, cancel, duplicate, conflict, and repeated apply through the event bus.
-- [ ] Test the same transitions through the batch event bus.
-- [ ] Load a session that contains old `ctree/*` entries and a `pi-workstream/compression` marker.
-- [ ] Confirm that a source range remains reachable at its original leaf after crop, range compression, and batch compression.
-- [ ] Confirm that failed revalidation writes no replacement messages or marker.
-- [ ] Confirm that cancel during preparation stops the nested model call.
-- [ ] Confirm that no `.env`, token, credential, session file, generated package archive, or temporary output is staged.
-- [ ] Review the final diff for unrelated changes.
+- [x] Test extension startup in Pi.
+- [x] Test `/branch`, `/merge`, `/crop`, `/compress`, `/panel`, `/decisions`, and `/undo` in one disposable session.
+- [x] Test Ctrl+Q and confirm that it opens the actionable panel without an LLM request.
+- [x] Test range prepare, status, apply, cancel, duplicate, conflict, and repeated apply through the event bus.
+- [x] Test the same transitions through the batch event bus.
+- [x] Load a session that contains old `ctree/*` entries and a `pi-workstream/compression` marker.
+- [x] Confirm that a source range remains reachable at its original leaf after crop, range compression, and batch compression.
+- [x] Confirm that failed revalidation writes no replacement messages or marker.
+- [x] Confirm that cancel during preparation stops the nested model call.
+- [x] Confirm that no `.env`, token, credential, session file, generated package archive, or temporary output is staged.
+- [x] Review the final diff for unrelated changes.
 
 ### Final acceptance gate
 
-- [ ] All automated checks pass.
-- [ ] All required invariants at the top of this document pass.
-- [ ] The final source layout has about 10 files.
-- [ ] `src/core/`, `src/extension/`, and `src/batch.ts` no longer exist.
-- [ ] There is one compression operation coordinator.
-- [ ] There are no circular imports.
-- [ ] Large context snapshots do not deep-copy message bodies several times.
-- [ ] No command, protocol, TUI view, review step, recovery path, or stored-session behavior was removed.
+- [x] All automated checks pass.
+- [x] All required invariants at the top of this document pass.
+- [x] The final source layout has about 10 files.
+- [x] `src/core/`, `src/extension/`, and `src/batch.ts` no longer exist.
+- [x] There is one compression operation coordinator.
+- [x] There are no circular imports.
+- [x] Large context snapshots do not deep-copy message bodies several times.
+- [x] No command, protocol, TUI view, review step, recovery path, or stored-session behavior was removed.
 
 ## Expected reduction
 
 Use these values as review targets, not as reasons to remove useful boundaries.
 
-- [ ] Source files: 13 → about 10.
-- [ ] Internal one-file directories: 2 → 0.
-- [ ] Compression operation state collections: 8 → 1 operation-state map.
-- [ ] Compression request execution engines: 2 → 1.
-- [ ] Circular import groups: 3 → 0.
+- [x] Source files: 13 → about 10.
+- [x] Internal one-file directories: 2 → 0.
+- [x] Compression operation state collections: 8 → 1 operation-state map.
+- [x] Compression request execution engines: 2 → 1.
+- [x] Circular import groups: 3 → 0.
 - [ ] Net function reduction: about 12–20 functions.
 - [ ] Net source reduction: about 400–650 lines.
-- [ ] Preserve separate files for protocol, panel presentation, drafting, mutation safety, and branch behavior even if a larger single file would reduce the raw file count further.
+- [x] Preserve separate files for protocol, panel presentation, drafting, mutation safety, and branch behavior even if a larger single file would reduce the raw file count further.

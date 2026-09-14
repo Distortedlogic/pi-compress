@@ -16,7 +16,7 @@
 	"pi": {
 		"extensions": ["./src/index.ts"]
 	},
-	"files": ["src", "LICENSE", "LICENSE.workstream", "README.md", "PROTOCOL.md", "ORIGIN.md"],
+	"files": ["src", "README.md", "PROTOCOL.md"],
 	"scripts": {
 		"test": "vitest run",
 		"check": "npm run typecheck && npm run lint",
@@ -48,7 +48,7 @@
 		"vitest": "4.1.11"
 	},
 	"knip": {
-		"entry": ["tests/**/*.test.ts"],
+		"entry": ["src/index.ts", "src/protocol.ts", "src/range-compression.ts", "tests/**/*.test.ts"],
 		"project": ["src/**/*.ts"]
 	}
 }

@@ -47,7 +47,7 @@ import {
 	planCrop,
 	planRemoveTurns,
 } from "./crop.ts";
-import type { DraftFn } from "./extension/draft.ts";
+import type { DraftFn } from "./draft.ts";
 import {
 	CTREE_DECISION,
 	type CtreeDecisionDetails,
@@ -72,7 +72,7 @@ export interface PanelInput extends SessionSnapshot {
 	premark?: string[];
 }
 
-export type PanelAction =
+type PanelAction =
 	| { type: "close" }
 	| { type: "jump"; entryId: string }
 	| { type: "branch"; entryId: string }
@@ -225,10 +225,6 @@ export class ContextPanel {
 		this.opts.tui.requestRender();
 	}
 
-	private act(action: PanelAction): void {
-		this.opts.onAction(action);
-	}
-
 	private selectedTreeEntryId(): string | undefined {
 		return this.treeSelector?.getTreeList().getSelectedNode()?.entry.id ?? this.opts.input.leafId ?? undefined;
 	}
@@ -238,8 +234,8 @@ export class ContextPanel {
 			decorateTree(this.opts.input.tree, this.opts.input.forks),
 			this.opts.input.leafId,
 			Math.max(10, (this.opts.maxBody ?? 26) * 2),
-			(entryId) => this.act({ type: "jump", entryId }),
-			() => this.act({ type: "close" }),
+			(entryId) => this.opts.onAction({ type: "jump", entryId }),
+			() => this.opts.onAction({ type: "close" }),
 			undefined,
 			this.controller.inspectId ?? this.opts.input.leafId ?? undefined,
 			"all",
@@ -371,7 +367,7 @@ export class ContextPanel {
 		if (items[0]) showDetails(items[0]);
 		list.onSelectionChange = showDetails;
 		list.onSelect = (item) => {
-			if (item.value) this.act({ type: "jump", entryId: item.value });
+			if (item.value) this.opts.onAction({ type: "jump", entryId: item.value });
 		};
 		list.onCancel = () => this.switchView("tree");
 		const container = new Container();
@@ -438,7 +434,7 @@ export class ContextPanel {
 					this.notify("no turns marked — space to mark a whole Q&A turn");
 					return;
 				}
-				this.act({
+				this.opts.onAction({
 					type: "crop-apply",
 					plan: planRemoveTurns(this.opts.input, [...this.controller.turnMarks]),
 					dryRun: this.opts.input.dryRun ?? false,
@@ -449,7 +445,7 @@ export class ContextPanel {
 				this.notify("nothing marked — space to mark entries");
 				return;
 			}
-			this.act({
+			this.opts.onAction({
 				type: "crop-apply",
 				plan: planCrop(this.opts.input, [...this.controller.marks]),
 				dryRun: this.opts.input.dryRun ?? false,
@@ -461,7 +457,7 @@ export class ContextPanel {
 
 	handleInput(data: string): void {
 		if (data === "q") {
-			this.act({ type: "close" });
+			this.opts.onAction({ type: "close" });
 			return;
 		}
 		const isEscape = matchesKey(data, "escape");
@@ -480,12 +476,12 @@ export class ContextPanel {
 				return;
 			}
 			if (data === "m") {
-				this.act({ type: "merge" });
+				this.opts.onAction({ type: "merge" });
 				return;
 			}
 			if (data === "b") {
 				const entryId = this.selectedTreeEntryId();
-				if (entryId) this.act({ type: "branch", entryId });
+				if (entryId) this.opts.onAction({ type: "branch", entryId });
 				return;
 			}
 			if (data === "i") {

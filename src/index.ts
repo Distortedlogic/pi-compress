@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerAmbient } from "./ambient.ts";
 import { registerBranch, registerMerge, registerUndo } from "./branches.ts";
-import { realDraft } from "./extension/draft.ts";
+import { realDraft } from "./draft.ts";
 import { registerCrop, registerDecisionRenderer, registerPanel } from "./panel.ts";
 import { registerCompressionServices, registerRangeCompress } from "./range-compression.ts";
 

@@ -10,7 +10,7 @@ import type {
 import parseArgs from "yargs-parser";
 import { refreshAmbient } from "./ambient.ts";
 import { type ForkInfo, type SessionState, decisionsOnPath, deriveState, serializeEntries } from "./context.ts";
-import { DRAFT_SYSTEM_PROMPT, type DraftFn, draftUserPrompt, modelKey, resolveModel } from "./extension/draft.ts";
+import { DRAFT_SYSTEM_PROMPT, type DraftFn, draftUserPrompt, modelKey, resolveModel } from "./draft.ts";
 import {
 	CTREE_CLOSE,
 	CTREE_DECISION,

@@ -2,7 +2,7 @@
 
 import { type Model, contentText } from "@earendil-works/pi-ai";
 import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { estimateTextTokens } from "../context.ts";
+import { estimateTextTokens } from "./context.ts";
 
 export type DraftFn = (
 	ctx: ExtensionCommandContext,

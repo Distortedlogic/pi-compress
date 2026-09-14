@@ -14,7 +14,7 @@ import {
 import { Value } from "typebox/value";
 import { refreshAmbient } from "./ambient.ts";
 import { estimateTextTokens, fmtTokens, serializeEntry, snapshotSession } from "./context.ts";
-import { draftRangeSummary, realDraft } from "./extension/draft.ts";
+import { draftRangeSummary, realDraft } from "./draft.ts";
 import {
 	type BatchSnapshot,
 	COMPRESSION_ENTRY,
@@ -81,7 +81,6 @@ export interface CompressionPlan extends RewritePlan {
 interface PreparedBatchCompression {
 	readonly plan: CompressionPlan;
 	readonly summary: string;
-	readonly taskMessage: string;
 }
 
 export type RangeCompressionOutcome = { status: "applied"; details: CtreeRangeCompactData } | { status: "cancelled" };
@@ -741,7 +740,6 @@ class CompressionOperationCoordinator {
 			value: {
 				plan: { ...target, ...range.plan },
 				summary,
-				taskMessage: target.taskMessage,
 			},
 		};
 	}

@@ -28,7 +28,7 @@ import {
 } from "../src/branches.ts";
 import { estimateEntryTokens, snapshotSession } from "../src/context.ts";
 import { applyCropPlan, planCrop } from "../src/crop.ts";
-import type { DraftFn } from "../src/extension/draft.ts";
+import type { DraftFn } from "../src/draft.ts";
 import piContextCompress from "../src/index.ts";
 import { ContextPanel, buildPanelInput, cropHandler, registerPanel } from "../src/panel.ts";
 import {
