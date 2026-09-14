@@ -10,13 +10,6 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 import { snapshotSession } from "./context.ts";
-import {
-	type RewritePlan,
-	applyRewrite,
-	prepareRewrite,
-	rangeCandidates,
-	revalidateRewrite,
-} from "./core/range-rewrite.ts";
 import { draftRangeSummary, realDraft } from "./extension/draft.ts";
 import {
 	type BatchSnapshot,
@@ -32,6 +25,7 @@ import {
 	QUEUED_TASK_TAIL,
 	compressionDetails,
 } from "./protocol.ts";
+import { type RewritePlan, applyRewrite, prepareRewrite, rangeCandidates, revalidateRewrite } from "./rewrite.ts";
 
 export interface CompressionPlan extends RewritePlan {
 	operationId: string;
@@ -48,10 +42,6 @@ interface Prepared {
 
 type Outcome = Pick<CompressionResult, "status" | "details" | "code">;
 
-function branch(ctx: ExtensionContext): SessionEntry[] {
-	return [...ctx.sessionManager.getBranch()];
-}
-
 function isQueuedTaskMessage(entry: SessionEntry): entry is SessionMessageEntry {
 	return (
 		entry.type === "message" &&
@@ -60,17 +50,13 @@ function isQueuedTaskMessage(entry: SessionEntry): entry is SessionMessageEntry 
 	);
 }
 
-function isAssistantMessage(entry: SessionEntry): boolean {
-	return entry.type === "message" && entry.message.role === "assistant";
-}
-
 export function prepareCompression(
 	ctx: ExtensionContext,
 	batchStartEntryId: string,
 	lastSettledEntryId: string,
 	operationId: string = randomUUID(),
 ): CompressionPlan {
-	const entries = branch(ctx);
+	const entries = ctx.sessionManager.getBranch();
 	const markerIndex = entries.findIndex((entry) => entry.id === batchStartEntryId);
 	const endIndex = entries.findIndex((entry) => entry.id === lastSettledEntryId);
 	const sourceLeafId = ctx.sessionManager.getLeafId();
@@ -82,7 +68,8 @@ export function prepareCompression(
 	);
 	if (taskMessageIndex === -1) throw new Error("The queued batch message is not available.");
 	const startIndex = entries.findIndex(
-		(entry, index) => index > taskMessageIndex && index <= endIndex && isAssistantMessage(entry),
+		(entry, index) =>
+			index > taskMessageIndex && index <= endIndex && entry.type === "message" && entry.message.role === "assistant",
 	);
 	if (startIndex === -1) throw new Error("The completed batch has no assistant execution range.");
 	const selectedIds = new Set(entries.slice(startIndex, endIndex + 1).map((entry) => entry.id));
@@ -129,7 +116,7 @@ export async function applyCompression(
 		selectedEntryIds: [...compression.selectedEntryIds],
 		sourceSha256: compression.sourceSha256,
 	};
-	const result = await applyRewrite(pi, ctx, compression, {
+	const applied = await applyRewrite(pi, ctx, compression, {
 		messages: [
 			{
 				customType: QUEUED_TASK_TAIL,
@@ -146,7 +133,7 @@ export async function applyCompression(
 		],
 		marker: { customType: COMPRESSION_ENTRY, data: details },
 	});
-	if (!result.applied) throw new Error("Compression navigation was cancelled.");
+	if (!applied) throw new Error("Compression navigation was cancelled.");
 	return details;
 }
 
@@ -156,7 +143,7 @@ function compressionOnBranch(
 	planId: string,
 	batchId: string,
 ): CompressionDetails | undefined {
-	for (const entry of branch(ctx).reverse()) {
+	for (const entry of ctx.sessionManager.getBranch().reverse()) {
 		const details = compressionDetails(entry);
 		if (details?.runId === runId && details.planId === planId && details.batchId === batchId) {
 			return structuredClone(details);

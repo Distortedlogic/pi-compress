@@ -19,14 +19,6 @@ import {
 	snapshotSession,
 } from "../src/context.ts";
 import {
-	applyRewrite,
-	candidateByEntryId,
-	prepareRewrite,
-	rangeCandidates,
-	resolveRangeEndpoint,
-	sourceSha8,
-} from "../src/core/range-rewrite.ts";
-import {
 	autoSelect,
 	contextTurns,
 	cropCandidates,
@@ -67,6 +59,7 @@ import {
 	renderRangeTail,
 	reviewRangeCompression,
 } from "../src/range-compression.ts";
+import { applyRewrite, candidateByEntryId, prepareRewrite, rangeCandidates, sourceSha8 } from "../src/rewrite.ts";
 
 initTheme("dark");
 
@@ -347,11 +340,8 @@ describe("shared range safety", () => {
 		const { old, snapshot } = cropScenario();
 		const groups = candidateByEntryId(rangeCandidates(snapshot));
 		expect(groups.get(old.result)?.entryIds).toEqual([old.call, old.result]);
+		expect(groups.get(old.result)?.startEntryId).toBe(old.call);
 		expect(() => prepareRewrite(snapshot, old.result, old.result)).toThrow(/split a required tool-call group/);
-		expect(resolveRangeEndpoint(rangeCandidates(snapshot), old.result, "start")).toEqual({
-			ok: true,
-			entryId: old.call,
-		});
 	});
 
 	it.each([
@@ -599,7 +589,7 @@ describe("shared rewrite apply", () => {
 			messages: [{ customType: CTREE_CROP_TAIL, content: "replacement", display: true }],
 			marker: { customType: CTREE_CROP, data: { sourceLeafId: world.plan.sourceLeafId } },
 		});
-		expect(result.applied).toBe(true);
+		expect(result).toBe(true);
 		const branch = world.session.manager.getBranch();
 		expect(branch.slice(-2).map((entry) => ("customType" in entry ? entry.customType : entry.type))).toEqual([
 			CTREE_CROP_TAIL,
@@ -623,7 +613,7 @@ describe("direct range compression API", () => {
 		};
 	}
 
-	it("prepares, reviews, and applies one immutable range value", async () => {
+	it("prepares, reviews, and applies one readonly range value", async () => {
 		const world = directWorld();
 		const target: RangeCompressionTarget = {
 			operationId: "direct-operation",
@@ -631,9 +621,7 @@ describe("direct range compression API", () => {
 			endEntryId: world.selected,
 		};
 		const prepared: PreparedRangeCompression = await prepareRangeCompression(world.ctx, target);
-		expect(Object.isFrozen(prepared)).toBe(true);
-		expect(Object.isFrozen(prepared.plan)).toBe(true);
-		expect(Object.isFrozen(prepared.plan.selectedEntryIds)).toBe(true);
+		expect(prepared.plan.selectedEntryIds).toEqual([world.selected]);
 		const reviewed = await reviewRangeCompression(world.ctx, prepared);
 		expect(reviewed).toBeDefined();
 		const details = await applyPreparedRangeCompression(world.pi, world.ctx, reviewed!);

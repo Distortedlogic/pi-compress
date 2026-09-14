@@ -28,7 +28,6 @@ import {
 	undoHandler,
 } from "../src/branches.ts";
 import { estimateEntryTokens, snapshotSession } from "../src/context.ts";
-import { applyRewrite, prepareRewrite, rangeCandidates, revalidateRewrite } from "../src/core/range-rewrite.ts";
 import { applyCropPlan, planCrop } from "../src/crop.ts";
 import type { DraftFn } from "../src/extension/draft.ts";
 import piContextCompress from "../src/index.ts";
@@ -62,6 +61,7 @@ import {
 	rangeCompressHandler,
 	registerRangeCompressionService,
 } from "../src/range-compression.ts";
+import { applyRewrite, prepareRewrite, rangeCandidates, revalidateRewrite } from "../src/rewrite.ts";
 
 initTheme("dark");
 
@@ -754,7 +754,7 @@ describe("range safety and rewrite contracts", () => {
 			messages: [{ customType: "test/tail", content: "replacement", display: true }],
 			marker: { customType: "test/marker", data: { sourceLeafId: seed.leafId } },
 		});
-		expect(result.applied).toBe(true);
+		expect(result).toBe(true);
 		expect(value.session.manager.getEntries()).toHaveLength(countBefore + 2);
 		expect(durableSequence(value.session.manager)).toEqual(["test/tail", "test/marker"]);
 		const originalBranchIds = value.session.manager.getBranch(seed.leafId).map((entry) => entry.id);
@@ -776,7 +776,7 @@ describe("range safety and rewrite contracts", () => {
 			messages: [{ customType: "test/tail", content: "replacement", display: true }],
 			marker: { customType: "test/marker", data: {} },
 		});
-		expect(result.applied).toBe(false);
+		expect(result).toBe(false);
 		expect(value.session.manager.getEntries()).toEqual(entriesBefore);
 		expect(value.session.manager.getLeafId()).toBe(seed.leafId);
 	});

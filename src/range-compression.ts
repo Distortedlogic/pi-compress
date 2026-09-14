@@ -10,16 +10,6 @@ import {
 import { Value } from "typebox/value";
 import { refreshAmbient } from "./ambient.ts";
 import { estimateTextTokens, fmtTokens, serializeEntry, snapshotSession } from "./context.ts";
-import {
-	type RangeCandidate,
-	type RewritePlan,
-	applyRewrite,
-	prepareRewrite,
-	rangeCandidates,
-	resolveRangeEndpoint,
-	revalidateRewrite,
-	sourceSha8,
-} from "./core/range-rewrite.ts";
 import { draftRangeSummary, realDraft } from "./extension/draft.ts";
 import {
 	CTREE_RANGE_COMPACT,
@@ -36,6 +26,15 @@ import {
 	type RangeCompressionTransport,
 	ctreeRangeCompactData,
 } from "./protocol.ts";
+import {
+	type RangeCandidate,
+	type RewritePlan,
+	applyRewrite,
+	prepareRewrite,
+	rangeCandidates,
+	revalidateRewrite,
+	sourceSha8,
+} from "./rewrite.ts";
 
 export interface RangeCompressionTarget {
 	readonly operationId: string;
@@ -93,16 +92,6 @@ class InvalidRangeCompressionRequestError extends Error {}
 
 class RangeCompressionSessionChangedError extends Error {}
 
-function immutablePlan(plan: RewritePlan): RewritePlan {
-	return Object.freeze({
-		...plan,
-		selectedEntryIds: Object.freeze([...plan.selectedEntryIds]),
-		continuationEntryIds: Object.freeze([...plan.continuationEntryIds]),
-		selectedEntries: Object.freeze([...plan.selectedEntries]),
-		continuationEntries: Object.freeze([...plan.continuationEntries]),
-	});
-}
-
 function assertStableSession(ctx: ExtensionCommandContext, sessionId: string, sourceLeafId: string | null): void {
 	if (ctx.sessionManager.getSessionId() !== sessionId || ctx.sessionManager.getLeafId() !== sourceLeafId) {
 		throw new RangeCompressionSessionChangedError("The session changed during range compression.");
@@ -156,11 +145,7 @@ function buildStartSelectorProjection(
 	ctx: ExtensionCommandContext,
 	candidates: readonly RangeCandidate[],
 ): RangeSelectorProjection {
-	const entryIds = candidates.flatMap((candidate) => {
-		if (candidate.protected) return [];
-		const endpoint = resolveRangeEndpoint(candidates, candidate.startEntryId, "start");
-		return endpoint.ok ? [endpoint.entryId] : [];
-	});
+	const entryIds = candidates.filter((candidate) => !candidate.protected).map((candidate) => candidate.startEntryId);
 	return buildLinearSelectorProjection(ctx, entryIds);
 }
 
@@ -173,9 +158,7 @@ function buildEndSelectorProjection(
 	for (let index = startCandidateIndex; index < candidates.length; index++) {
 		const candidate = candidates[index];
 		if (!candidate || candidate.protected) break;
-		const endpoint = resolveRangeEndpoint(candidates, candidate.endEntryId, "end");
-		if (!endpoint.ok) break;
-		entryIds.push(endpoint.entryId);
+		entryIds.push(candidate.endEntryId);
 	}
 	return buildLinearSelectorProjection(ctx, entryIds);
 }
@@ -274,16 +257,16 @@ export async function prepareRangeCompression(
 	assertStableSession(ctx, sessionId, sourceLeafId);
 	let validatedPlan: RewritePlan;
 	try {
-		validatedPlan = immutablePlan(revalidateRewrite(ctx, plan));
+		validatedPlan = revalidateRewrite(ctx, plan);
 	} catch (error) {
 		throw new RangeCompressionSessionChangedError(error instanceof Error ? error.message : String(error));
 	}
-	return Object.freeze({
+	return {
 		plan: validatedPlan,
 		summary,
 		summaryModel: `${model.provider}/${model.id}`,
 		operationId: target.operationId,
-	});
+	};
 }
 
 export async function reviewRangeCompression(
@@ -292,7 +275,7 @@ export async function reviewRangeCompression(
 ): Promise<PreparedRangeCompression | undefined> {
 	const summary = (await ctx.ui.editor("Review selected range summary", prepared.summary))?.trim();
 	if (!summary) return undefined;
-	return Object.freeze({ ...prepared, summary });
+	return { ...prepared, summary };
 }
 
 export async function applyPreparedRangeCompression(
@@ -311,7 +294,7 @@ export async function applyPreparedRangeCompression(
 		throw new RangeCompressionSessionChangedError(error instanceof Error ? error.message : String(error));
 	}
 	const details = compressionDetails(plan, prepared.summary, prepared.summaryModel, prepared.operationId);
-	const result = await applyRewrite(pi, ctx, plan, {
+	const applied = await applyRewrite(pi, ctx, plan, {
 		messages: [
 			{
 				customType: CTREE_RANGE_TAIL,
@@ -322,7 +305,7 @@ export async function applyPreparedRangeCompression(
 		],
 		marker: { customType: CTREE_RANGE_COMPACT, data: details },
 	});
-	return result.applied ? details : undefined;
+	return applied ? details : undefined;
 }
 
 export async function compressRange(

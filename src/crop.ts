@@ -9,14 +9,8 @@ import type {
 import { minimatch } from "minimatch";
 import { refreshAmbient } from "./ambient.ts";
 import { type SessionSnapshot, estimateEntryTokens, fmtTokens, serializeEntry, snapshotEntry } from "./context.ts";
-import {
-	type RewritePlan,
-	applyRewrite,
-	candidateByEntryId,
-	prepareRewrite,
-	rangeCandidates,
-} from "./core/range-rewrite.ts";
 import { CTREE_CROP, CTREE_CROP_TAIL, type CtreeCropDrop, type CtreeCropStub } from "./protocol.ts";
+import { type RewritePlan, applyRewrite, candidateByEntryId, prepareRewrite, rangeCandidates } from "./rewrite.ts";
 
 export interface CropCandidate {
 	entryId: string;
@@ -34,7 +28,6 @@ export interface AutoRules {
 }
 
 export interface CropPlan extends RewritePlan {
-	marked: string[];
 	reclaimTokens: number;
 	stubs: CtreeCropStub[];
 	dropped: CtreeCropDrop[];
@@ -138,6 +131,20 @@ export function autoSelect(candidates: CropCandidate[], rules: AutoRules): strin
 		.map((candidate) => candidate.entryId);
 }
 
+function prepareMarkedRange(
+	snapshot: SessionSnapshot,
+	firstEntryId: string | undefined,
+	lastEntryId: string | undefined,
+	invalidGroupMessage: string,
+): RewritePlan {
+	if (!firstEntryId || !lastEntryId) throw new Error("nothing marked");
+	const groupsByEntryId = candidateByEntryId(rangeCandidates(snapshot));
+	const firstGroup = groupsByEntryId.get(firstEntryId);
+	const lastGroup = groupsByEntryId.get(lastEntryId);
+	if (!firstGroup || !lastGroup) throw new Error(invalidGroupMessage);
+	return prepareRewrite(snapshot, firstGroup.startEntryId, lastGroup.endEntryId);
+}
+
 export function planCrop(snapshot: SessionSnapshot, markedIds: string[]): CropPlan {
 	const position = new Map(snapshot.contextEntries.map((entry, index) => [entry.id, index]));
 	const croppable = new Set(cropCandidates(snapshot).map((candidate) => candidate.entryId));
@@ -147,14 +154,12 @@ export function planCrop(snapshot: SessionSnapshot, markedIds: string[]): CropPl
 	}
 
 	const ordered = [...markedIds].sort((left, right) => (position.get(left) ?? 0) - (position.get(right) ?? 0));
-	const earliest = ordered[0];
-	const latest = ordered.at(-1);
-	if (!earliest || !latest) throw new Error("nothing marked");
-	const groupsByEntryId = candidateByEntryId(rangeCandidates(snapshot));
-	const firstGroup = groupsByEntryId.get(earliest);
-	const lastGroup = groupsByEntryId.get(latest);
-	if (!firstGroup || !lastGroup) throw new Error("marked crop entry is not in a safe rewrite group");
-	const rewrite = prepareRewrite(snapshot, firstGroup.startEntryId, lastGroup.endEntryId);
+	const rewrite = prepareMarkedRange(
+		snapshot,
+		ordered[0],
+		ordered.at(-1),
+		"marked crop entry is not in a safe rewrite group",
+	);
 	const stubs: CtreeCropStub[] = ordered.map((id) => {
 		const entry = snapshotEntry(snapshot, id);
 		if (!entry || entry.type !== "message") throw new Error(`entry ${id} is not a message`);
@@ -172,7 +177,6 @@ export function planCrop(snapshot: SessionSnapshot, markedIds: string[]): CropPl
 	});
 	return {
 		...rewrite,
-		marked: ordered,
 		reclaimTokens: stubs.reduce((total, stub) => total + stub.estTokens, 0),
 		stubs,
 		dropped: [],
@@ -210,14 +214,12 @@ export function planRemoveTurns(snapshot: SessionSnapshot, userIds: string[]): C
 	const ordered = [...userIds].sort((left, right) => (position.get(left) ?? 0) - (position.get(right) ?? 0));
 	const firstTurn = ordered[0] ? byUser.get(ordered[0]) : undefined;
 	const lastTurn = ordered.at(-1) ? byUser.get(ordered.at(-1) as string) : undefined;
-	const firstEntryId = firstTurn?.entryIds[0];
-	const lastEntryId = lastTurn?.entryIds.at(-1);
-	if (!firstEntryId || !lastEntryId) throw new Error("nothing marked");
-	const groupsByEntryId = candidateByEntryId(rangeCandidates(snapshot));
-	const firstGroup = groupsByEntryId.get(firstEntryId);
-	const lastGroup = groupsByEntryId.get(lastEntryId);
-	if (!firstGroup || !lastGroup) throw new Error("marked turn is not in a safe rewrite group");
-	const rewrite = prepareRewrite(snapshot, firstGroup.startEntryId, lastGroup.endEntryId);
+	const rewrite = prepareMarkedRange(
+		snapshot,
+		firstTurn?.entryIds[0],
+		lastTurn?.entryIds.at(-1),
+		"marked turn is not in a safe rewrite group",
+	);
 	const dropped: CtreeCropDrop[] = ordered.map((userId) => {
 		const turn = byUser.get(userId) as ContextTurn;
 		const body = turn.entryIds
@@ -233,7 +235,6 @@ export function planRemoveTurns(snapshot: SessionSnapshot, userIds: string[]): C
 	});
 	return {
 		...rewrite,
-		marked: [],
 		reclaimTokens: dropped.reduce((total, drop) => total + drop.estTokens, 0),
 		stubs: [],
 		dropped,
@@ -288,7 +289,7 @@ export async function applyCropPlan(pi: ExtensionAPI, ctx: ExtensionCommandConte
 		...(plan.dropped.length ? { dropped: plan.dropped } : {}),
 	};
 	try {
-		const result = await applyRewrite(pi, ctx, plan, {
+		const applied = await applyRewrite(pi, ctx, plan, {
 			messages: [
 				{
 					customType: CTREE_CROP_TAIL,
@@ -299,7 +300,7 @@ export async function applyCropPlan(pi: ExtensionAPI, ctx: ExtensionCommandConte
 			],
 			marker: { customType: CTREE_CROP, data: details },
 		});
-		if (!result.applied) {
+		if (!applied) {
 			ctx.ui.notify("crop aborted — navigation cancelled, nothing written", "warning");
 			return;
 		}

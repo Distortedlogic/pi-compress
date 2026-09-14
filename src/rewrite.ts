@@ -6,18 +6,15 @@ import {
 	serializeEntries,
 	snapshotEntry,
 	snapshotSession,
-} from "../context.ts";
-import { CTREE_DECISION } from "../protocol.ts";
+} from "./context.ts";
+import { CTREE_DECISION } from "./protocol.ts";
 
 export interface RangeCandidate {
-	id: string;
 	startEntryId: string;
 	endEntryId: string;
 	entryIds: string[];
 	pathIndex: number;
 	endPathIndex: number;
-	estTokens: number;
-	selectable: boolean;
 	protected: boolean;
 	protectReason?: string;
 }
@@ -31,7 +28,6 @@ export interface RewritePlan {
 	readonly selectedEntryIds: readonly string[];
 	readonly continuationEntryIds: readonly string[];
 	readonly selectedEntries: readonly SessionEntry[];
-	readonly continuationEntries: readonly SessionEntry[];
 	readonly source: string;
 	readonly continuationSerialized: string;
 	readonly selectedEstTokens: number;
@@ -57,13 +53,6 @@ export interface RewriteOutput {
 	};
 }
 
-export interface ApplyRewriteResult {
-	applied: boolean;
-	plan: RewritePlan;
-}
-
-export type RangeEndpointResult = { ok: true; entryId: string } | { ok: false; reason: string };
-
 function makeCandidate(
 	slice: readonly SessionEntry[],
 	startIndex: number,
@@ -73,17 +62,13 @@ function makeCandidate(
 	const entries = slice.slice(startIndex, endPathIndex + 1);
 	const first = entries[0] as SessionEntry;
 	const last = entries.at(-1) as SessionEntry;
-	const selectable = protectReason === undefined;
 	return {
-		id: first.id,
 		startEntryId: first.id,
 		endEntryId: last.id,
 		entryIds: entries.map((entry) => entry.id),
 		pathIndex: startIndex,
 		endPathIndex,
-		estTokens: entries.reduce((total, entry) => total + estimateEntryTokens(entry), 0),
-		selectable,
-		protected: !selectable,
+		protected: protectReason !== undefined,
 		protectReason,
 	};
 }
@@ -107,20 +92,6 @@ export function candidateByEntryId(candidates: readonly RangeCandidate[]): Map<s
 		for (const entryId of candidate.entryIds) byEntryId.set(entryId, candidate);
 	}
 	return byEntryId;
-}
-
-export function resolveRangeEndpoint(
-	candidates: readonly RangeCandidate[],
-	entryId: string,
-	endpoint: "start" | "end",
-): RangeEndpointResult {
-	const candidate = candidateByEntryId(candidates).get(entryId);
-	if (!candidate) return { ok: false, reason: "entry is not in the active context" };
-	if (candidate.protected) return { ok: false, reason: candidate.protectReason ?? "entry is protected" };
-	return {
-		ok: true,
-		entryId: endpoint === "start" ? candidate.startEntryId : candidate.endEntryId,
-	};
 }
 
 export function rangeCandidates(snapshot: SessionSnapshot): RangeCandidate[] {
@@ -238,7 +209,9 @@ export function prepareRewrite(
 	const firstGroupIndex = candidates.indexOf(firstGroup);
 	const lastGroupIndex = candidates.indexOf(lastGroup);
 	const blocked = candidates.slice(firstGroupIndex, lastGroupIndex + 1).find((candidate) => candidate.protected);
-	if (blocked) throw new Error(`entry ${blocked.id} is protected: ${blocked.protectReason ?? "not selectable"}`);
+	if (blocked) {
+		throw new Error(`entry ${blocked.startEntryId} is protected: ${blocked.protectReason ?? "not selectable"}`);
+	}
 
 	const selectedEntries = snapshot.contextEntries.slice(firstGroup.pathIndex, lastGroup.endPathIndex + 1);
 	const continuationEntries = snapshot.contextEntries.slice(lastGroup.endPathIndex + 1);
@@ -264,7 +237,6 @@ export function prepareRewrite(
 		selectedEntryIds: selectedEntries.map((entry) => entry.id),
 		continuationEntryIds: continuationEntries.map((entry) => entry.id),
 		selectedEntries,
-		continuationEntries,
 		source,
 		continuationSerialized: serializeEntries(continuationEntries),
 		selectedEstTokens: selectedEntries.reduce((total, entry) => total + estimateEntryTokens(entry), 0),
@@ -308,12 +280,12 @@ export async function applyRewrite(
 	ctx: ExtensionCommandContext,
 	initial: RewritePlan,
 	output: RewriteOutput,
-): Promise<ApplyRewriteResult> {
+): Promise<boolean> {
 	await ctx.waitForIdle();
 	const plan = revalidateRewrite(ctx, initial);
 	const navigation = await ctx.navigateTree(plan.anchorId, { summarize: false });
-	if (navigation.cancelled) return { applied: false, plan };
+	if (navigation.cancelled) return false;
 	for (const message of output.messages) pi.sendMessage(message, { triggerTurn: false });
 	pi.appendEntry(output.marker.customType, output.marker.data);
-	return { applied: true, plan };
+	return true;
 }

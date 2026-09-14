@@ -343,34 +343,34 @@ interface ForkInfo {
 
 **Files:** `src/core/range-rewrite.ts`, new `src/rewrite.ts`, `src/crop.ts`, `src/range-compression.ts`, `src/batch.ts`, related existing tests
 
-- [ ] Move `src/core/range-rewrite.ts` to `src/rewrite.ts`.
-- [ ] Delete `src/core/` after no files remain in it.
-- [ ] Remove these unused or duplicate `RangeCandidate` fields:
+- [x] Move `src/core/range-rewrite.ts` to `src/rewrite.ts`.
+- [x] Delete `src/core/` after no files remain in it.
+- [x] Remove these unused or duplicate `RangeCandidate` fields:
   - `id`
   - `selectable`
   - `estTokens`
-- [ ] Use `startEntryId` in protected-range error messages.
-- [ ] Delete `RangeEndpointResult` and `resolveRangeEndpoint()`.
-- [ ] Build selector projections directly from unprotected candidate `startEntryId` and `endEntryId` values.
-- [ ] Remove `continuationEntries` from `RewritePlan`.
-- [ ] Keep `continuationEntryIds` and `continuationSerialized`.
-- [ ] Delete `immutablePlan()` from range compression.
-- [ ] Keep compile-time read-only plan fields and runtime revalidation.
-- [ ] Change `applyRewrite()` to return `Promise<boolean>`.
-- [ ] Delete `ApplyRewriteResult`.
-- [ ] Update all callers to test the returned Boolean.
-- [ ] Remove `CropPlan.marked` and its assignments.
-- [ ] Add one crop-specific helper for shared marked-range boundary setup used by `planCrop()` and `planRemoveTurns()`.
-- [ ] Do not create a general selection framework.
-- [ ] Inline the thin `branch(ctx)` and `isAssistantMessage()` helpers in batch preparation.
+- [x] Use `startEntryId` in protected-range error messages.
+- [x] Delete `RangeEndpointResult` and `resolveRangeEndpoint()`.
+- [x] Build selector projections directly from unprotected candidate `startEntryId` and `endEntryId` values.
+- [x] Remove `continuationEntries` from `RewritePlan`.
+- [x] Keep `continuationEntryIds` and `continuationSerialized`.
+- [x] Delete `immutablePlan()` from range compression.
+- [x] Keep compile-time read-only plan fields and runtime revalidation.
+- [x] Change `applyRewrite()` to return `Promise<boolean>`.
+- [x] Delete `ApplyRewriteResult`.
+- [x] Update all callers to test the returned Boolean.
+- [x] Remove `CropPlan.marked` and its assignments.
+- [x] Add one crop-specific helper for shared marked-range boundary setup used by `planCrop()` and `planRemoveTurns()`.
+- [x] Do not create a general selection framework.
+- [x] Inline the thin `branch(ctx)` and `isAssistantMessage()` helpers in batch preparation.
 
 ### Acceptance gate
 
-- [ ] Rewrite plans contain only data used by apply, revalidation, protocol details, summary drafting, or crop reconstruction.
-- [ ] Tool-call atomicity and all protected-entry rules remain unchanged.
-- [ ] All apply callers handle cancelled navigation correctly.
-- [ ] Source and continuation change tests still fail safely.
-- [ ] `npm test`, `npm run check`, and `npm run knip` pass.
+- [x] Rewrite plans contain only data used by apply, revalidation, protocol details, summary drafting, or crop reconstruction.
+- [x] Tool-call atomicity and all protected-entry rules remain unchanged.
+- [x] All apply callers handle cancelled navigation correctly.
+- [x] Source and continuation change tests still fail safely.
+- [x] `npm test`, `npm run check`, and `npm run knip` pass.
 
 ---
 
