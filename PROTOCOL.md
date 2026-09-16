@@ -1,15 +1,50 @@
-# Range Compression Protocol
+# Compression Interfaces
+
+## Direct completed-batch operation
+
+Use `compressCompletedBatch` for completed task batches. It is a direct in-process function call. It does not use request or result event channels.
+
+```typescript
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { compressCompletedBatch } from "pi-context-compress/range-compression";
+import type { BatchSnapshot } from "pi-context-compress/protocol";
+
+async function compressBatch(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  batch: BatchSnapshot,
+  anchorEntryId: string,
+  lastSettledEntryId: string,
+) {
+  return compressCompletedBatch(pi, ctx, {
+    runId: "task-run-id",
+    batch,
+    operationId: "compression-operation-id",
+    anchorEntryId,
+    lastSettledEntryId,
+    review: false,
+  });
+}
+```
+
+Set `review: true` to open the generated summary in the editor before apply. The function runs batch range preparation, summary generation, optional review, and apply in order.
+
+The promise resolves with `CompressionDetails` after a successful apply. It resolves with `undefined` when the user cancels review or when session navigation is cancelled. Model, range-validation, session-change, navigation, and persistence errors reject the promise with the same error object. The function does not convert these errors to status objects or failure codes.
+
+Callers must use the real `ExtensionCommandContext` from an extension command. They must treat `undefined` as cancellation and decide how to report or stop their operation. They can catch a rejection for cleanup, but they must rethrow the same value when the failure must remain visible.
+
+## Range compression event service
 
 The generic range-compression protocol uses Pi's in-process event bus. Load the main `pi-context-compress` extension before you use this protocol.
 
-## Channels
+### Channels
 
 - Request: `pi-context-compress/v1/range/request`
 - Result: `pi-context-compress/v1/range/result`
 
 Import the channel constants and schemas from `pi-context-compress/protocol`.
 
-## Transport
+### Transport
 
 The event value has this shape:
 
@@ -24,7 +59,7 @@ This transport is in-process. `context` contains functions and is not part of th
 
 Range application navigates the session tree. You must supply a real `ExtensionCommandContext`. Extension command handlers receive this context. Normal event handlers receive only `ExtensionContext`. Do not cast that context. A normal event handler must queue or invoke its own extension command first. The command handler can then emit the request with its command context.
 
-## Requests
+### Requests
 
 All request objects are exact. Extra fields fail validation.
 
@@ -61,7 +96,7 @@ Apply, cancel, and status requests have this shape:
 
 Use a new `requestId` for correlation. Keep the same `operationId` for all requests for one range operation.
 
-## Results
+### Results
 
 Every accepted request produces one result with the same request, session, and operation identifiers.
 
@@ -77,7 +112,7 @@ Every accepted request produces one result with the same request, session, and o
 
 Only an `applied` result has `details: CtreeRangeCompactData`. Only a `failed` result has a failure `code`.
 
-## Event-bus example
+### Event-bus example
 
 Subscribe to the result channel before you emit the request.
 
@@ -137,9 +172,9 @@ export default function (pi: ExtensionAPI) {
 
 Send a later `apply` request with the same `sessionId` and `operationId`. Subscribe with its new `requestId` before you emit it.
 
-## Idempotency and cancellation
+### Idempotency and cancellation
 
-Prepared work is keyed by `kind:sessionId:operationId`, so range and batch operations with equal IDs stay separate.
+Prepared range work is keyed by `sessionId:operationId`.
 
 - An identical in-flight request, without its `requestId`, receives the prior outcome.
 - A different prepare request for the same operation key fails with `operation_conflict`.
@@ -148,9 +183,9 @@ Prepared work is keyed by `kind:sessionId:operationId`, so range and batch opera
 - Session shutdown aborts pending preparation and removes its service state.
 - An apply mutation cannot be cancelled after it starts. A concurrent mutation fails with `busy`.
 
-## Range safety
+### Range safety
 
-The service uses the same range planner as `/compress` and batch compression.
+The service uses the same range planner as `/compress` and direct completed-batch compression.
 
 A complete assistant tool-call group and its contiguous tool results form one atomic candidate. A range cannot start, end, or cross these protected boundaries:
 
@@ -166,7 +201,7 @@ Before tree navigation, the service checks the session ID, source leaf, selected
 
 The original entries stay on the previous branch. The stored source leaf supports append-only recovery.
 
-## Failure codes
+### Failure codes
 
 | Code | Meaning |
 | --- | --- |
@@ -177,6 +212,6 @@ The original entries stay on the previous branch. The stored source leaf support
 | `not_prepared` | Apply was requested before successful preparation. |
 | `busy` | Another request or session mutation is in progress. |
 
-## Pi compaction
+### Pi compaction
 
 Pi's native `ctx.compact()` performs whole-context compaction. This selected-range protocol does not use it.
