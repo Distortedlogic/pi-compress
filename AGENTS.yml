@@ -1,10 +1,8 @@
-pi:
-  extensions:
-    pi-context-preload:
-      extends:
-        - "pi-extension"
-      files:
-        - "package.json"
-        - "tsconfig.json"
-        - "src/**/*.ts"
-        - "!tests/**/*"
+pi-context-preload:
+  extends:
+    - "pi-extension"
+  files:
+    - "package.json"
+    - "tsconfig.json"
+    - "src/**/*.ts"
+    - "!tests/**/*"
