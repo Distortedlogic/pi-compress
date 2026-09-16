@@ -78,6 +78,15 @@ export interface CompressionPlan extends RewritePlan {
 	taskMessage: string;
 }
 
+export interface CompletedBatchCompressionInput {
+	readonly runId: string;
+	readonly batch: BatchSnapshot;
+	readonly operationId: string;
+	readonly anchorEntryId: string;
+	readonly lastSettledEntryId: string;
+	readonly review: boolean;
+}
+
 interface PreparedBatchCompression {
 	readonly plan: CompressionPlan;
 	readonly summary: string;
@@ -442,7 +451,7 @@ export async function applyCompression(
 	batch: BatchSnapshot,
 	compression: CompressionPlan,
 	summary: string,
-): Promise<CompressionDetails> {
+): Promise<CompressionDetails | undefined> {
 	const details: CompressionDetails = {
 		v: 2,
 		runId,
@@ -477,8 +486,24 @@ export async function applyCompression(
 		],
 		marker: { customType: COMPRESSION_ENTRY, data: details },
 	});
-	if (!applied) throw new Error("Compression navigation was cancelled.");
-	return details;
+	return applied ? details : undefined;
+}
+
+export async function compressCompletedBatch(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	input: CompletedBatchCompressionInput,
+): Promise<CompressionDetails | undefined> {
+	const compression = prepareCompression(ctx, input.anchorEntryId, input.lastSettledEntryId, input.operationId);
+	const range = await prepareRangeCompression(ctx, {
+		operationId: input.operationId,
+		startEntryId: compression.startEntryId,
+		endEntryId: compression.endEntryId,
+		anchorEntryId: compression.anchorId,
+	});
+	const approved = input.review ? await reviewRangeCompression(ctx, range) : range;
+	if (!approved) return undefined;
+	return applyCompression(pi, ctx, input.runId, input.batch, { ...compression, ...approved.plan }, approved.summary);
 }
 
 function compressionOnBranch(
@@ -791,7 +816,7 @@ class CompressionOperationCoordinator {
 				prepared.value.plan,
 				prepared.value.summary,
 			);
-			return { status: "applied", details };
+			return details ? { status: "applied", details } : { status: "cancelled" };
 		}
 		throw new Error("Compression operation kind changed.");
 	}
