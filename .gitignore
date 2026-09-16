@@ -7,3 +7,5 @@ coverage/
 .DS_Store
 .pi/
 .env
+PRELOAD.md
+TREE.txt
