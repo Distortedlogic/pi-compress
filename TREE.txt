@@ -1,23 +1,22 @@
-/tmp/pi-context-preload-tree-ExrXl7/paths.txt
+/tmp/pi-context-preload-tree-jOq6I3/paths.txt
 ├── src
-│   ├── core
-│   │   ├── consumers.ts
-│   │   ├── estimate.ts
-│   │   ├── serialize.ts
-│   │   └── types.ts
-│   ├── extension
-│   │   └── draft.ts
-│   ├── __tests__
-│   ├── batch.ts
+│   ├── ambient.ts
 │   ├── branches.ts
-│   ├── compression.ts
+│   ├── context.ts
+│   ├── crop.ts
+│   ├── draft.ts
 │   ├── index.ts
 │   ├── panel.ts
 │   ├── protocol.ts
-│   └── session.ts
+│   ├── range-compression.ts
+│   └── rewrite.ts
+├── .tasks
+│   └── replace-task-compression-event-bus-with-direct-import.md
+├── tests
 ├── biome.json
 ├── .gitignore
 ├── package.json
-├── RANGE_COMPRESSION_API_TASKLIST.md
+├── PROTOCOL.md
 ├── README.md
+├── SIMPLIFICATION_TASKLIST.md
 └── tsconfig.json
