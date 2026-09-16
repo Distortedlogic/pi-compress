@@ -28,16 +28,12 @@ import {
 import {
 	type BatchSnapshot,
 	COMPRESSION_ENTRY,
-	COMPRESSION_REQUEST,
-	COMPRESSION_RESULT,
 	COMPRESSION_TAIL,
 	CTREE_CROP,
 	CTREE_CROP_TAIL,
 	CTREE_DECISION,
 	CTREE_RANGE_COMPACT,
 	CTREE_RANGE_TAIL,
-	type CompressionRequest,
-	type CompressionResult,
 	QUEUED_TASK_TAIL,
 	RANGE_COMPRESSION_REQUEST,
 	RANGE_COMPRESSION_RESULT,
@@ -56,7 +52,6 @@ import {
 	prepareCompression,
 	prepareRangeCompression,
 	rangeCompressHandler,
-	registerBatchCompression,
 	registerRangeCompressionService,
 	renderRangeTail,
 	reviewRangeCompression,
@@ -958,96 +953,6 @@ describe("batch compression", () => {
 			.filter((entry) => "customType" in entry)
 			.map((entry) => (entry as { customType: string }).customType);
 		expect(types.slice(-3)).toEqual([QUEUED_TASK_TAIL, COMPRESSION_TAIL, COMPRESSION_ENTRY]);
-	});
-
-	function serviceWorld(complete?: () => Promise<AssistantMessage>) {
-		const world = batchSession();
-		const events = createEventBus();
-		const shutdownHandlers: Array<(event: unknown, ctx: ExtensionCommandContext) => void> = [];
-		const pi = Object.assign(mutationApi(world.session.manager), {
-			events,
-			on: (name: string, handler: (event: unknown, ctx: ExtensionCommandContext) => void) => {
-				if (name === "session_shutdown") shutdownHandlers.push(handler);
-			},
-		}) as unknown as ExtensionAPI;
-		const ctx = extensionContext(world.session.manager, complete);
-		registerBatchCompression(pi);
-		const request = (value: CompressionRequest): Promise<CompressionResult> =>
-			new Promise((resolve) => {
-				const unsubscribe = events.on(COMPRESSION_RESULT, (result) => {
-					const parsed = result as CompressionResult;
-					if (parsed.requestId !== value.requestId) return;
-					unsubscribe();
-					resolve(parsed);
-				});
-				events.emit(COMPRESSION_REQUEST, { request: value, context: ctx });
-			});
-		const make = (
-			action: CompressionRequest["action"],
-			overrides: Partial<CompressionRequest> = {},
-		): CompressionRequest => ({
-			v: 1,
-			requestId: `${action}-${Math.random()}`,
-			sessionId: world.session.manager.getSessionId(),
-			operationId: "operation",
-			runId: "run",
-			action,
-			batch,
-			anchorEntryId: world.anchor,
-			lastSettledEntryId: world.settled,
-			review: false,
-			...overrides,
-		});
-		return { ...world, ctx, request, make, shutdownHandlers };
-	}
-
-	it("preserves prepare, status, conflict, apply, replay, cancel, missing, and failure results", async () => {
-		const world = serviceWorld();
-		expect((await world.request(world.make("status"))).status).toBe("missing");
-		expect((await world.request(world.make("prepare"))).status).toBe("prepared");
-		expect((await world.request(world.make("status"))).status).toBe("prepared");
-		const conflict = await world.request(world.make("prepare", { batch: { ...batch, batchId: HASH_B } }));
-		expect(conflict).toMatchObject({ status: "failed", code: "operation_conflict" });
-		const applied = await world.request(world.make("apply"));
-		expect(applied.status).toBe("applied");
-		expect((await world.request(world.make("apply"))).status).toBe("applied");
-
-		const cancelled = serviceWorld();
-		expect((await cancelled.request(cancelled.make("cancel"))).status).toBe("cancelled");
-		expect((await cancelled.request(cancelled.make("status"))).status).toBe("cancelled");
-		const missing = serviceWorld();
-		expect(await missing.request(missing.make("apply"))).toMatchObject({ status: "failed", code: "not_prepared" });
-		const invalid = serviceWorld();
-		expect(await invalid.request(invalid.make("prepare", { anchorEntryId: undefined }))).toMatchObject({
-			status: "failed",
-			code: "invalid_request",
-		});
-		const changed = serviceWorld();
-		expect(await changed.request(changed.make("status", { sessionId: "other" }))).toMatchObject({
-			status: "failed",
-			code: "session_changed",
-		});
-		const failed = serviceWorld(async () => {
-			throw new Error("provider failed");
-		});
-		expect(await failed.request(failed.make("prepare"))).toMatchObject({
-			status: "failed",
-			code: "compression_failed",
-		});
-	});
-
-	it("returns busy for a conflicting request while preparation is pending", async () => {
-		let release: (message: AssistantMessage) => void = () => {};
-		const pending = new Promise<AssistantMessage>((resolve) => {
-			release = resolve;
-		});
-		const world = serviceWorld(() => pending);
-		const preparing = world.request(world.make("prepare", { requestId: "prepare" }));
-		await Promise.resolve();
-		const busy = await world.request(world.make("status", { requestId: "status" }));
-		expect(busy).toMatchObject({ status: "failed", code: "busy" });
-		release(assistantResponse("summary"));
-		expect((await preparing).status).toBe("prepared");
 	});
 });
 

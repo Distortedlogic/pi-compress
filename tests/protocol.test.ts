@@ -4,8 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
 	BatchSnapshotSchema,
 	COMPRESSION_ENTRY,
-	COMPRESSION_REQUEST,
-	COMPRESSION_RESULT,
 	COMPRESSION_TAIL,
 	CTREE_CLOSE,
 	CTREE_CROP,
@@ -15,8 +13,6 @@ import {
 	CTREE_RANGE_COMPACT,
 	CTREE_RANGE_TAIL,
 	CompressionDetailsSchema,
-	CompressionRequestSchema,
-	CompressionResultSchema,
 	LEGACY_COMPRESSION_ENTRY,
 	QUEUED_TASK_TAIL,
 	RANGE_COMPRESSION_REQUEST,
@@ -111,8 +107,6 @@ describe("durable protocol names", () => {
 		["range tail", CTREE_RANGE_TAIL, "ctree/range-tail"],
 		["range request", RANGE_COMPRESSION_REQUEST, "pi-context-compress/v1/range/request"],
 		["range result", RANGE_COMPRESSION_RESULT, "pi-context-compress/v1/range/result"],
-		["request", COMPRESSION_REQUEST, "pi-context-compress/v1/request"],
-		["result", COMPRESSION_RESULT, "pi-context-compress/v1/result"],
 		["batch marker", COMPRESSION_ENTRY, "pi-context-compress/compression"],
 		["queued task", QUEUED_TASK_TAIL, "pi-context-compress/queued-task"],
 		["batch summary", COMPRESSION_TAIL, "pi-context-compress/summary"],
@@ -177,77 +171,13 @@ describe("batch compatibility readers", () => {
 	});
 });
 
-describe("external event schemas", () => {
-	const request = {
-		v: 1 as const,
-		requestId: "request",
-		sessionId: "session",
-		operationId: "operation",
-		runId: "run",
-		action: "prepare" as const,
-		batch,
-		anchorEntryId: "anchor",
-		lastSettledEntryId: "leaf",
-	};
-
-	it("keeps batch, request, details, and result messages exact", () => {
+describe("batch persistence schemas", () => {
+	it("keeps snapshots and compression details exact", () => {
 		expect(Value.Check(BatchSnapshotSchema, batch)).toBe(true);
 		expect(Value.Check(CompressionDetailsSchema, compression)).toBe(true);
-		expect(Value.Check(CompressionRequestSchema, request)).toBe(true);
-		expect(
-			Value.Check(CompressionResultSchema, {
-				v: 1,
-				requestId: "request",
-				sessionId: "session",
-				operationId: "operation",
-				status: "applied",
-				details: compression,
-			}),
-		).toBe(true);
-		for (const [schema, value] of [
-			[BatchSnapshotSchema, { ...batch, extra: true }],
-			[CompressionDetailsSchema, { ...compression, extra: true }],
-			[CompressionRequestSchema, { ...request, extra: true }],
-			[
-				CompressionResultSchema,
-				{ v: 1, requestId: "r", sessionId: "s", operationId: "o", status: "missing", extra: true },
-			],
-		] as const) {
-			expect(Value.Check(schema, value)).toBe(false);
-		}
+		expect(Value.Check(BatchSnapshotSchema, { ...batch, extra: true })).toBe(false);
+		expect(Value.Check(CompressionDetailsSchema, { ...compression, extra: true })).toBe(false);
 	});
-
-	it.each(["prepare", "apply", "cancel", "status"])("accepts request action %s", (action) => {
-		expect(Value.Check(CompressionRequestSchema, { ...request, action })).toBe(true);
-	});
-
-	it.each(["prepared", "applied", "cancelled", "missing", "failed"])("accepts result status %s", (status) => {
-		expect(
-			Value.Check(CompressionResultSchema, {
-				v: 1,
-				requestId: "request",
-				sessionId: "session",
-				operationId: "operation",
-				status,
-			}),
-		).toBe(true);
-	});
-
-	it.each(["invalid_request", "operation_conflict", "session_changed", "compression_failed", "not_prepared", "busy"])(
-		"accepts shared failure code %s",
-		(code) => {
-			const result = {
-				v: 1,
-				requestId: "request",
-				sessionId: "session",
-				operationId: "operation",
-				status: "failed",
-				code,
-			};
-			expect(Value.Check(CompressionResultSchema, result)).toBe(true);
-			expect(Value.Check(CompressionResultSchema, { ...result, code: "unknown" })).toBe(false);
-		},
-	);
 });
 
 describe("generic range event schemas", () => {

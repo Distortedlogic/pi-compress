@@ -188,8 +188,6 @@ export interface RangeCompressionTransport {
 	context: ExtensionCommandContext;
 }
 
-export const COMPRESSION_REQUEST = "pi-context-compress/v1/request";
-export const COMPRESSION_RESULT = "pi-context-compress/v1/result";
 export const COMPRESSION_ENTRY = "pi-context-compress/compression";
 export const QUEUED_TASK_TAIL = "pi-context-compress/queued-task";
 export const COMPRESSION_TAIL = "pi-context-compress/summary";
@@ -228,36 +226,6 @@ export const CompressionDetailsSchema = Type.Object(
 	exact,
 );
 export type CompressionDetails = Static<typeof CompressionDetailsSchema>;
-
-export const CompressionRequestSchema = Type.Object(
-	{
-		...CompressionOperationProperties,
-		runId: Id,
-		action: Type.Union([
-			Type.Literal("prepare"),
-			Type.Literal("apply"),
-			Type.Literal("cancel"),
-			Type.Literal("status"),
-		]),
-		batch: BatchSnapshotSchema,
-		anchorEntryId: Type.Optional(Id),
-		lastSettledEntryId: Type.Optional(Id),
-		review: Type.Optional(Type.Boolean()),
-	},
-	exact,
-);
-export type CompressionRequest = Static<typeof CompressionRequestSchema>;
-
-export const CompressionResultSchema = Type.Object(
-	{
-		...CompressionOperationProperties,
-		status: CompressionStatusSchema,
-		details: Type.Optional(CompressionDetailsSchema),
-		code: Type.Optional(CompressionFailureCodeSchema),
-	},
-	exact,
-);
-export type CompressionResult = Static<typeof CompressionResultSchema>;
 
 function isCustomEntry(entry: SessionEntry, customType: string): entry is CustomEntry {
 	return entry.type === "custom" && entry.customType === customType;

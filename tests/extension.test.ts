@@ -32,11 +32,7 @@ import type { DraftFn } from "../src/draft.ts";
 import piContextCompress from "../src/index.ts";
 import { ContextPanel, buildPanelInput, cropHandler, registerPanel } from "../src/panel.ts";
 import {
-	type BatchSnapshot,
 	COMPRESSION_ENTRY,
-	COMPRESSION_REQUEST,
-	COMPRESSION_RESULT,
-	COMPRESSION_TAIL,
 	CTREE_CLOSE,
 	CTREE_CROP,
 	CTREE_CROP_TAIL,
@@ -45,10 +41,7 @@ import {
 	CTREE_RANGE_COMPACT,
 	CTREE_RANGE_TAIL,
 	type CompressionDetails,
-	type CompressionRequest,
-	type CompressionResult,
 	LEGACY_COMPRESSION_ENTRY,
-	QUEUED_TASK_TAIL,
 	RANGE_COMPRESSION_REQUEST,
 	RANGE_COMPRESSION_RESULT,
 	type RangeCompressionRequest,
@@ -58,8 +51,6 @@ import {
 import {
 	prepareRangeCompression,
 	rangeCompressHandler,
-	registerBatchCompression,
-	registerCompressionServices,
 	registerRangeCompressionService,
 } from "../src/range-compression.ts";
 import { applyRewrite, prepareRewrite, rangeCandidates, revalidateRewrite } from "../src/rewrite.ts";
@@ -394,73 +385,16 @@ function rangeControlRequest(
 	return { ...common, action: "status" };
 }
 
-interface BatchSeed {
-	anchorId: string;
-	lastSettledEntryId: string;
-	leafId: string;
-}
-
-const BATCH_SNAPSHOT: BatchSnapshot = {
-	planId: "a".repeat(64),
-	batchId: "b".repeat(64),
-	structuralRevision: "c".repeat(64),
-	fileRevision: "d".repeat(64),
-	bitmap: [false, true],
-};
-
-function seedBatch(value: World): BatchSeed {
-	value.session.user("root request");
-	const anchorId = value.session.assistant("batch anchor");
-	value.session.user("[Queued task]\n\ncomplete the queued work");
-	value.session.assistant("batch execution");
-	const lastSettledEntryId = value.session.assistant("batch settled");
-	return { anchorId, lastSettledEntryId, leafId: lastSettledEntryId };
-}
-
-function batchRequest(
-	value: World,
-	seed: BatchSeed,
-	requestId: string,
-	operationId: string,
-	action: CompressionRequest["action"],
-	batch: BatchSnapshot = BATCH_SNAPSHOT,
-): CompressionRequest {
-	return {
-		v: 1,
-		requestId,
-		sessionId: value.session.manager.getSessionId(),
-		operationId,
-		runId: "run-1",
-		action,
-		batch,
-		...(action === "prepare"
-			? { anchorEntryId: seed.anchorId, lastSettledEntryId: seed.lastSettledEntryId, review: false }
-			: {}),
-	};
-}
-
-function sendBatchRequest(value: World, request: CompressionRequest): Promise<CompressionResult> {
-	return new Promise((resolve) => {
-		const unsubscribe = value.pi.events.on(COMPRESSION_RESULT, (event) => {
-			const result = event as CompressionResult;
-			if (result.requestId !== request.requestId) return;
-			unsubscribe();
-			resolve(result);
-		});
-		value.pi.events.emit(COMPRESSION_REQUEST, { request, context: value.ctx });
-	});
-}
-
 function compressionDetailsFixture(): CompressionDetails {
 	return {
 		v: 2,
 		runId: "run-1",
-		planId: BATCH_SNAPSHOT.planId,
-		batchId: BATCH_SNAPSHOT.batchId,
+		planId: "a".repeat(64),
+		batchId: "b".repeat(64),
 		operationId: "operation-1",
-		structuralRevision: BATCH_SNAPSHOT.structuralRevision,
-		fileRevision: BATCH_SNAPSHOT.fileRevision,
-		preCompletionBitmap: [...BATCH_SNAPSHOT.bitmap],
+		structuralRevision: "c".repeat(64),
+		fileRevision: "d".repeat(64),
+		preCompletionBitmap: [false, true],
 		sourceLeafId: "source-leaf",
 		preTaskAnchorId: "anchor",
 		taskMessageEntryId: "task",
@@ -962,185 +896,7 @@ describe("range compression protocol", () => {
 	});
 });
 
-describe("batch compression protocol", () => {
-	it("isolates equal range and batch operation IDs in the unified coordinator", async () => {
-		const value = world();
-		const range = seedRange(value);
-		const batch = seedBatch(value);
-		registerCompressionServices(value.pi);
-		const operationId = "shared-operation";
-		expect(
-			await sendRangeRequest(value, rangePrepareRequest(value, range, "shared-range-prepare", operationId)),
-		).toMatchObject({ status: "prepared" });
-		expect(
-			await sendBatchRequest(value, batchRequest(value, batch, "shared-batch-prepare", operationId, "prepare")),
-		).toMatchObject({ status: "prepared" });
-		expect(
-			await sendRangeRequest(value, rangeControlRequest(value, "shared-range-cancel", operationId, "cancel")),
-		).toMatchObject({ status: "cancelled" });
-		expect(
-			await sendBatchRequest(value, batchRequest(value, batch, "shared-batch-status", operationId, "status")),
-		).toMatchObject({ status: "prepared" });
-	});
-
-	it("keeps prepare, duplicate, conflict, status, apply, and repeated-apply behavior", async () => {
-		const value = world();
-		const seed = seedBatch(value);
-		registerBatchCompression(value.pi);
-		const operationId = "batch-main";
-		expect(
-			await sendBatchRequest(value, batchRequest(value, seed, "batch-status-before", operationId, "status")),
-		).toMatchObject({
-			status: "missing",
-		});
-		expect(
-			await sendBatchRequest(value, batchRequest(value, seed, "batch-apply-before", operationId, "apply")),
-		).toMatchObject({
-			status: "failed",
-			code: "not_prepared",
-		});
-		const prepare = batchRequest(value, seed, "batch-prepare", operationId, "prepare");
-		expect(await sendBatchRequest(value, prepare)).toMatchObject({ status: "prepared" });
-		expect(await sendBatchRequest(value, { ...prepare, requestId: "batch-prepare-duplicate" })).toMatchObject({
-			status: "prepared",
-		});
-		expect(
-			await sendBatchRequest(value, {
-				...prepare,
-				requestId: "batch-prepare-conflict",
-				batch: { ...BATCH_SNAPSHOT, bitmap: [true, true] },
-			}),
-		).toMatchObject({ status: "failed", code: "operation_conflict" });
-		expect(
-			await sendBatchRequest(value, batchRequest(value, seed, "batch-status-after", operationId, "status")),
-		).toMatchObject({
-			status: "prepared",
-		});
-		expect(await sendBatchRequest(value, batchRequest(value, seed, "batch-apply", operationId, "apply"))).toMatchObject(
-			{
-				status: "applied",
-			},
-		);
-		expect(durableSequence(value.session.manager)).toEqual([QUEUED_TASK_TAIL, COMPRESSION_TAIL, COMPRESSION_ENTRY]);
-		expect(value.session.manager.getBranch(seed.leafId).map((entry) => entry.id)).toContain(seed.lastSettledEntryId);
-		expect(
-			await sendBatchRequest(value, batchRequest(value, seed, "batch-apply-repeat", operationId, "apply")),
-		).toMatchObject({ status: "applied" });
-		expect(durableSequence(value.session.manager)).toEqual([QUEUED_TASK_TAIL, COMPRESSION_TAIL, COMPRESSION_ENTRY]);
-	});
-
-	it("deduplicates an in-flight prepare and reports busy actions", async () => {
-		const value = world();
-		const seed = seedBatch(value);
-		const started = deferred<void>();
-		const release = deferred<AssistantMessage>();
-		(value.ctx.modelRegistry as unknown as { complete: (...args: unknown[]) => Promise<AssistantMessage> }).complete =
-			async () => {
-				started.resolve(undefined);
-				return release.promise;
-			};
-		registerBatchCompression(value.pi);
-		const operationId = "batch-pending";
-		const prepare = batchRequest(value, seed, "batch-pending-first", operationId, "prepare");
-		const first = sendBatchRequest(value, prepare);
-		await started.promise;
-		const duplicate = sendBatchRequest(value, { ...prepare, requestId: "batch-pending-duplicate" });
-		expect(
-			await sendBatchRequest(value, batchRequest(value, seed, "batch-pending-apply", operationId, "apply")),
-		).toMatchObject({ status: "failed", code: "busy" });
-		release.resolve(assistantResponse("batch summary"));
-		expect(await first).toMatchObject({ status: "prepared" });
-		expect(await duplicate).toMatchObject({ status: "prepared" });
-	});
-
-	it("cancels absent, preparing, and prepared operations", async () => {
-		const absent = world();
-		const absentSeed = seedBatch(absent);
-		registerBatchCompression(absent.pi);
-		expect(
-			await sendBatchRequest(absent, batchRequest(absent, absentSeed, "batch-cancel-absent", "batch-absent", "cancel")),
-		).toMatchObject({ status: "cancelled" });
-
-		const preparing = world();
-		const preparingSeed = seedBatch(preparing);
-		const started = deferred<AbortSignal>();
-		(
-			preparing.ctx.modelRegistry as unknown as {
-				complete: (...args: unknown[]) => Promise<AssistantMessage>;
-			}
-		).complete = async (...args: unknown[]) => {
-			const signal = (args[2] as { signal: AbortSignal }).signal;
-			started.resolve(signal);
-			return new Promise<AssistantMessage>((_resolve, reject) => {
-				signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-			});
-		};
-		registerBatchCompression(preparing.pi);
-		const preparingOperation = "batch-preparing";
-		const prepareResult = sendBatchRequest(
-			preparing,
-			batchRequest(preparing, preparingSeed, "batch-cancel-preparing-prepare", preparingOperation, "prepare"),
-		);
-		const signal = await started.promise;
-		expect(
-			await sendBatchRequest(
-				preparing,
-				batchRequest(preparing, preparingSeed, "batch-cancel-preparing", preparingOperation, "cancel"),
-			),
-		).toMatchObject({ status: "cancelled" });
-		expect(signal.aborted).toBe(true);
-		expect(await prepareResult).toMatchObject({ status: "cancelled" });
-
-		const prepared = world();
-		const preparedSeed = seedBatch(prepared);
-		registerBatchCompression(prepared.pi);
-		const preparedOperation = "batch-prepared";
-		await sendBatchRequest(
-			prepared,
-			batchRequest(prepared, preparedSeed, "batch-cancel-prepared-prepare", preparedOperation, "prepare"),
-		);
-		expect(
-			await sendBatchRequest(
-				prepared,
-				batchRequest(prepared, preparedSeed, "batch-cancel-prepared", preparedOperation, "cancel"),
-			),
-		).toMatchObject({ status: "cancelled" });
-	});
-
-	it("keeps apply non-interruptible and reports session changes", async () => {
-		const value = world();
-		const seed = seedBatch(value);
-		registerBatchCompression(value.pi);
-		const operationId = "batch-applying";
-		await sendBatchRequest(value, batchRequest(value, seed, "batch-applying-prepare", operationId, "prepare"));
-		const enteredNavigation = deferred<void>();
-		const releaseNavigation = deferred<void>();
-		(value.ctx as unknown as { navigateTree: ExtensionCommandContext["navigateTree"] }).navigateTree = async (
-			entryId,
-			options,
-		) => {
-			value.navigations.push({ entryId, summarize: options?.summarize });
-			enteredNavigation.resolve(undefined);
-			await releaseNavigation.promise;
-			value.session.manager.branch(entryId);
-			return { cancelled: false };
-		};
-		const applying = sendBatchRequest(value, batchRequest(value, seed, "batch-applying-apply", operationId, "apply"));
-		await enteredNavigation.promise;
-		expect(
-			await sendBatchRequest(value, batchRequest(value, seed, "batch-applying-cancel", operationId, "cancel")),
-		).toMatchObject({ status: "failed", code: "busy" });
-		releaseNavigation.resolve(undefined);
-		expect(await applying).toMatchObject({ status: "applied" });
-
-		const wrongSession = batchRequest(value, seed, "batch-wrong-session", "batch-wrong", "status");
-		wrongSession.sessionId = "different-session";
-		expect(await sendBatchRequest(value, wrongSession)).toMatchObject({
-			status: "failed",
-			code: "session_changed",
-		});
-	});
-
+describe("batch compression persistence", () => {
 	it("parses legacy workstream compression markers", () => {
 		const value = world();
 		value.session.user("root");
