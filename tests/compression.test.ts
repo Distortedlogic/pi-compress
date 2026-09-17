@@ -1,11 +1,11 @@
 import type { AssistantMessage, ToolCall } from "@earendil-works/pi-ai";
 import {
+	createEventBus,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
+	initTheme,
 	SessionManager,
 	type TreeSelectorComponent,
-	createEventBus,
-	initTheme,
 } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
@@ -42,15 +42,15 @@ import {
 	type RangeCompressionResult,
 } from "../src/protocol.ts";
 import {
-	type PreparedRangeCompression,
-	type RangeCompressionInput,
-	type RangeCompressionOutcome,
-	type RangeCompressionTarget,
 	applyCompression,
 	applyPreparedRangeCompression,
 	compressRange,
+	type PreparedRangeCompression,
 	prepareCompression,
 	prepareRangeCompression,
+	type RangeCompressionInput,
+	type RangeCompressionOutcome,
+	type RangeCompressionTarget,
 	rangeCompressHandler,
 	registerRangeCompressionService,
 	renderRangeTail,

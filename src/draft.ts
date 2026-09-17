@@ -1,6 +1,6 @@
 /** Decision-record drafting through Pi's public model registry. */
 
-import { type Model, contentText } from "@earendil-works/pi-ai";
+import { contentText, type Model } from "@earendil-works/pi-ai";
 import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { estimateTextTokens } from "./context.ts";
 

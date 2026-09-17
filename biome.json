@@ -1,8 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
-	"files": {
-		"ignore": ["**/dist/**", "**/node_modules/**", "fixtures/*.jsonl"]
-	},
+	"$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab",
@@ -11,18 +8,23 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true,
-			"suspicious": {
-				"noExplicitAny": "off"
+			"preset": "recommended",
+			"performance": {
+				"noDelete": "off"
 			},
 			"style": {
 				"noNonNullAssertion": "off"
+			},
+			"suspicious": {
+				"noExplicitAny": "off"
 			}
 		}
 	},
 	"javascript": {
 		"formatter": {
-			"quoteStyle": "double"
+			"quoteStyle": "double",
+			"semicolons": "always",
+			"trailingCommas": "all"
 		}
 	}
 }

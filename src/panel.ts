@@ -4,44 +4,44 @@ import {
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
-	type SessionEntry,
-	TreeSelectorComponent,
 	getMarkdownTheme,
 	getSettingsListTheme,
+	type SessionEntry,
+	TreeSelectorComponent,
 } from "@earendil-works/pi-coding-agent";
 import {
 	type Component,
 	Container,
 	Markdown,
+	matchesKey,
 	type SelectItem,
 	SelectList,
 	type SettingItem,
 	SettingsList,
-	type TUI,
 	Text,
-	matchesKey,
+	type TUI,
 	truncateToWidth,
 } from "@earendil-works/pi-tui";
 import parseArgs from "yargs-parser";
 import { renderGauge } from "./ambient.ts";
 import { branchHandler, exportDecisions, mergeHandler, notifyDecisions, parseDecisionArgs } from "./branches.ts";
 import {
-	type ForkInfo,
-	type SessionSnapshot,
 	aggregateConsumers,
 	decisionsOnPath,
 	deriveState,
 	estimateEntryTokens,
+	type ForkInfo,
 	fmtTokens,
 	nearestOpenFork,
+	type SessionSnapshot,
 	serializeEntry,
 } from "./context.ts";
 import {
+	applyCropPlan,
+	autoSelect,
 	type ContextTurn,
 	type CropCandidate,
 	type CropPlan,
-	applyCropPlan,
-	autoSelect,
 	contextTurns,
 	cropCandidates,
 	planCrop,

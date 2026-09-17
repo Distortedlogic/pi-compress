@@ -8,9 +8,9 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { minimatch } from "minimatch";
 import { refreshAmbient } from "./ambient.ts";
-import { type SessionSnapshot, estimateEntryTokens, fmtTokens, serializeEntry, snapshotEntry } from "./context.ts";
+import { estimateEntryTokens, fmtTokens, type SessionSnapshot, serializeEntry, snapshotEntry } from "./context.ts";
 import { CTREE_CROP, CTREE_CROP_TAIL, type CtreeCropDrop, type CtreeCropStub } from "./protocol.ts";
-import { type RewritePlan, applyRewrite, candidateByEntryId, prepareRewrite, rangeCandidates } from "./rewrite.ts";
+import { applyRewrite, candidateByEntryId, prepareRewrite, type RewritePlan, rangeCandidates } from "./rewrite.ts";
 
 export interface CropCandidate {
 	entryId: string;

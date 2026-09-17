@@ -14,9 +14,15 @@
 		"./range-compression": "./src/range-compression.ts"
 	},
 	"pi": {
-		"extensions": ["./src/index.ts"]
+		"extensions": [
+			"./src/index.ts"
+		]
 	},
-	"files": ["src", "README.md", "PROTOCOL.md"],
+	"files": [
+		"src",
+		"README.md",
+		"PROTOCOL.md"
+	],
 	"scripts": {
 		"test": "vitest run",
 		"check": "npm run typecheck && npm run lint",
@@ -36,7 +42,7 @@
 		"typebox": "*"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "1.9.4",
+		"@biomejs/biome": "^2.5.14",
 		"@earendil-works/pi-ai": "0.84.3",
 		"@earendil-works/pi-coding-agent": "0.84.3",
 		"@earendil-works/pi-tui": "0.84.3",
@@ -48,7 +54,14 @@
 		"vitest": "4.1.11"
 	},
 	"knip": {
-		"entry": ["src/index.ts", "src/protocol.ts", "src/range-compression.ts", "tests/**/*.test.ts"],
-		"project": ["src/**/*.ts"]
+		"entry": [
+			"src/index.ts",
+			"src/protocol.ts",
+			"src/range-compression.ts",
+			"tests/**/*.test.ts"
+		],
+		"project": [
+			"src/**/*.ts"
+		]
 	}
 }

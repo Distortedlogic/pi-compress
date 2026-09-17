@@ -6,12 +6,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AssistantMessage, Model, ToolCall } from "@earendil-works/pi-ai";
 import {
+	createEventBus,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
-	SessionManager,
-	createEventBus,
 	initTheme,
+	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, visibleWidth } from "@earendil-works/pi-tui";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -30,9 +30,10 @@ import { estimateEntryTokens, snapshotSession } from "../src/context.ts";
 import { applyCropPlan, planCrop } from "../src/crop.ts";
 import type { DraftFn } from "../src/draft.ts";
 import piContextCompress from "../src/index.ts";
-import { ContextPanel, buildPanelInput, cropHandler, registerPanel } from "../src/panel.ts";
+import { buildPanelInput, ContextPanel, cropHandler, registerPanel } from "../src/panel.ts";
 import {
 	COMPRESSION_ENTRY,
+	type CompressionDetails,
 	CTREE_CLOSE,
 	CTREE_CROP,
 	CTREE_CROP_TAIL,
@@ -40,13 +41,12 @@ import {
 	CTREE_FORK,
 	CTREE_RANGE_COMPACT,
 	CTREE_RANGE_TAIL,
-	type CompressionDetails,
+	compressionDetails,
 	LEGACY_COMPRESSION_ENTRY,
 	RANGE_COMPRESSION_REQUEST,
 	RANGE_COMPRESSION_RESULT,
 	type RangeCompressionRequest,
 	type RangeCompressionResult,
-	compressionDetails,
 } from "../src/protocol.ts";
 import {
 	prepareRangeCompression,

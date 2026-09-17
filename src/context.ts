@@ -1,4 +1,4 @@
-import { type UserMessage, contentText } from "@earendil-works/pi-ai";
+import { contentText, type UserMessage } from "@earendil-works/pi-ai";
 import type {
 	CustomMessageEntry,
 	ExtensionContext,

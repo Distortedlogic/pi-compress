@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
-	type SessionSnapshot,
 	estimateEntryTokens,
+	type SessionSnapshot,
 	serializeEntries,
 	snapshotEntry,
 	snapshotSession,

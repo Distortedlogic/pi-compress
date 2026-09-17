@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { BAND_THRESHOLDS, type Band, aggregateConsumers, band, deriveState, fmtTokens } from "./context.ts";
+import { aggregateConsumers, BAND_THRESHOLDS, type Band, band, deriveState, fmtTokens } from "./context.ts";
 
 type PiTheme = ExtensionContext["ui"]["theme"];
 
