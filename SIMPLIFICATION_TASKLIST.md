@@ -23,11 +23,11 @@ Do not start a work unit until its dependencies and acceptance gates are complet
   - `/undo`
 - [x] Keep `Ctrl+Q` as the panel shortcut.
 - [x] Keep all current event channels:
-  - `pi-context-compress/v1/range/request`
-  - `pi-context-compress/v1/range/result`
-  - `pi-context-compress/v1/request`
-  - `pi-context-compress/v1/result`
-- [x] Keep stored custom-type identifiers, including all `ctree/*`, `pi-context-compress/*`, and `pi-workstream/compression` values.
+  - `pi-compress/v1/range/request`
+  - `pi-compress/v1/range/result`
+  - `pi-compress/v1/request`
+  - `pi-compress/v1/result`
+- [x] Keep stored custom-type identifiers, including all `ctree/*`, `pi-compress/*`, and `pi-workstream/compression` values.
 - [x] Keep all protocol and details version values.
 - [x] Keep append-only mutation. Never delete or rewrite source session entries.
 - [x] Keep original source ranges recoverable at their old leaves.
@@ -550,7 +550,7 @@ Build one domain-specific coordinator. Do not build a reusable workflow framewor
 - [x] Remove `if (api.events)` because `events` is required by `ExtensionAPI`.
 - [x] Register the unified compression services directly.
 - [x] Keep `index.ts` as registration code only.
-- [x] Use `pi-context-compress` in current user-visible titles, descriptions, notifications, and documentation.
+- [x] Use `pi-compress` in current user-visible titles, descriptions, notifications, and documentation.
 - [x] Keep old `ctree/*` and legacy workstream identifiers only where stored-session or protocol compatibility requires them.
 - [x] Update source paths in package exports only where a target file actually moved.
 - [x] Confirm that production dependencies remain in `dependencies` and Pi-provided packages remain in `peerDependencies`.

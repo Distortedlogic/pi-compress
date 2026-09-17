@@ -6,8 +6,8 @@ Use `compressCompletedBatch` for completed task batches. It is a direct in-proce
 
 ```typescript
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { compressCompletedBatch } from "pi-context-compress/range-compression";
-import type { BatchSnapshot } from "pi-context-compress/protocol";
+import { compressCompletedBatch } from "pi-compress/range-compression";
+import type { BatchSnapshot } from "pi-compress/protocol";
 
 async function compressBatch(
   pi: ExtensionAPI,
@@ -35,14 +35,14 @@ Callers must use the real `ExtensionCommandContext` from an extension command. T
 
 ## Range compression event service
 
-The generic range-compression protocol uses Pi's in-process event bus. Load the main `pi-context-compress` extension before you use this protocol.
+The generic range-compression protocol uses Pi's in-process event bus. Load the main `pi-compress` extension before you use this protocol.
 
 ### Channels
 
-- Request: `pi-context-compress/v1/range/request`
-- Result: `pi-context-compress/v1/range/result`
+- Request: `pi-compress/v1/range/request`
+- Result: `pi-compress/v1/range/result`
 
-Import the channel constants and schemas from `pi-context-compress/protocol`.
+Import the channel constants and schemas from `pi-compress/protocol`.
 
 ### Transport
 
@@ -126,7 +126,7 @@ import {
   RangeCompressionResultSchema,
   type RangeCompressionResult,
   type RangeCompressionTransport,
-} from "pi-context-compress/protocol";
+} from "pi-compress/protocol";
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("prepare-range", {

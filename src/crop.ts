@@ -255,10 +255,10 @@ export function renderReconstruction(plan: CropPlan): string {
 	const droppedIds = new Set(plan.dropped.flatMap((drop) => drop.entryIds));
 	const header =
 		plan.dropped.length === 0
-			? `[pi-context-compress/crop: rebuilt context after cropping ${plan.stubs.length} entries, ~${fmtTokens(
+			? `[pi-compress/crop: rebuilt context after cropping ${plan.stubs.length} entries, ~${fmtTokens(
 					plan.reclaimTokens,
 				)} tokens reclaimed. Originals preserved on the previous branch (leaf ${plan.sourceLeafId}).]`
-			: `[pi-context-compress/crop: rebuilt context after ${[
+			: `[pi-compress/crop: rebuilt context after ${[
 					`removing ${plan.dropped.length} turn${plan.dropped.length === 1 ? "" : "s"}`,
 					plan.stubs.length ? `cropping ${plan.stubs.length} entr${plan.stubs.length === 1 ? "y" : "ies"}` : "",
 				]

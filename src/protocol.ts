@@ -39,8 +39,8 @@ export const CTREE_CROP = "ctree/crop";
 export const CTREE_CROP_TAIL = "ctree/crop-tail";
 export const CTREE_RANGE_COMPACT = "ctree/range-compact";
 export const CTREE_RANGE_TAIL = "ctree/range-tail";
-export const RANGE_COMPRESSION_REQUEST = "pi-context-compress/v1/range/request";
-export const RANGE_COMPRESSION_RESULT = "pi-context-compress/v1/range/result";
+export const RANGE_COMPRESSION_REQUEST = "pi-compress/v1/range/request";
+export const RANGE_COMPRESSION_RESULT = "pi-compress/v1/range/result";
 
 export const CtreeCloseStatusSchema = Type.Union([
 	Type.Literal("squashed"),
@@ -188,9 +188,9 @@ export interface RangeCompressionTransport {
 	context: ExtensionCommandContext;
 }
 
-export const COMPRESSION_ENTRY = "pi-context-compress/compression";
-export const QUEUED_TASK_TAIL = "pi-context-compress/queued-task";
-export const COMPRESSION_TAIL = "pi-context-compress/summary";
+export const COMPRESSION_ENTRY = "pi-compress/compression";
+export const QUEUED_TASK_TAIL = "pi-compress/queued-task";
+export const COMPRESSION_TAIL = "pi-compress/summary";
 export const LEGACY_COMPRESSION_ENTRY = "pi-workstream/compression";
 
 export const BatchSnapshotSchema = Type.Object(

@@ -105,11 +105,11 @@ describe("durable protocol names", () => {
 		["crop tail", CTREE_CROP_TAIL, "ctree/crop-tail"],
 		["range", CTREE_RANGE_COMPACT, "ctree/range-compact"],
 		["range tail", CTREE_RANGE_TAIL, "ctree/range-tail"],
-		["range request", RANGE_COMPRESSION_REQUEST, "pi-context-compress/v1/range/request"],
-		["range result", RANGE_COMPRESSION_RESULT, "pi-context-compress/v1/range/result"],
-		["batch marker", COMPRESSION_ENTRY, "pi-context-compress/compression"],
-		["queued task", QUEUED_TASK_TAIL, "pi-context-compress/queued-task"],
-		["batch summary", COMPRESSION_TAIL, "pi-context-compress/summary"],
+		["range request", RANGE_COMPRESSION_REQUEST, "pi-compress/v1/range/request"],
+		["range result", RANGE_COMPRESSION_RESULT, "pi-compress/v1/range/result"],
+		["batch marker", COMPRESSION_ENTRY, "pi-compress/compression"],
+		["queued task", QUEUED_TASK_TAIL, "pi-compress/queued-task"],
+		["batch summary", COMPRESSION_TAIL, "pi-compress/summary"],
 		["legacy batch marker", LEGACY_COMPRESSION_ENTRY, "pi-workstream/compression"],
 	])("keeps %s stable", (_name, actual, expected) => {
 		expect(actual).toBe(expected);

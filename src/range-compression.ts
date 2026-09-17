@@ -243,7 +243,7 @@ async function selectNativeEntry(
 export function renderRangeTail(plan: RewritePlan, approvedSummary: string): string {
 	const summary = approvedSummary.trim();
 	if (!summary) throw new Error("approved range summary is empty");
-	const header = `[pi-context-compress/range: summarized ${plan.selectedEntryIds.length} entries, ~${fmtTokens(
+	const header = `[pi-compress/range: summarized ${plan.selectedEntryIds.length} entries, ~${fmtTokens(
 		plan.selectedEstTokens,
 	)} tokens, source ${sourceSha8(plan)}. Originals preserved at leaf ${plan.sourceLeafId}.]`;
 	const parts = [header, summary];
@@ -938,7 +938,7 @@ export async function rangeCompressHandler(
 
 export function registerRangeCompress(pi: ExtensionAPI): void {
 	pi.registerCommand("compress", {
-		description: "pi-context-compress: select, summarize, review, and replace one active-context range",
+		description: "pi-compress: select, summarize, review, and replace one active-context range",
 		handler: (args, ctx) => rangeCompressHandler(pi, ctx, args),
 	});
 }

@@ -563,7 +563,7 @@ export class ContextPanel {
 		const frame = new Container();
 		frame.addChild(
 			new Text(
-				` ${this.opts.theme.fg("accent", this.opts.theme.bold("pi-context-compress"))} ${this.opts.theme.fg("dim", `· ${this.controller.view}`)}  ${input.project}${this.opts.theme.fg("dim", session)} ${this.opts.theme.fg("success", `⎇ ${currentFork?.data.name ?? "trunk"}`)}${input.model ? this.opts.theme.fg("dim", ` · ${input.model}`) : ""}`,
+				` ${this.opts.theme.fg("accent", this.opts.theme.bold("pi-compress"))} ${this.opts.theme.fg("dim", `· ${this.controller.view}`)}  ${input.project}${this.opts.theme.fg("dim", session)} ${this.opts.theme.fg("success", `⎇ ${currentFork?.data.name ?? "trunk"}`)}${input.model ? this.opts.theme.fg("dim", ` · ${input.model}`) : ""}`,
 				0,
 				0,
 			),
@@ -750,7 +750,7 @@ export async function cropHandler(pi: ExtensionAPI, ctx: ExtensionCommandContext
 export function registerCrop(pi: ExtensionAPI): void {
 	pi.registerCommand("crop", {
 		description:
-			"pi-context-compress: surgically stub out huge tool/MCP results (--top for the biggest; interactive; --auto --apply --dry-run)",
+			"pi-compress: surgically stub out huge tool/MCP results (--top for the biggest; interactive; --auto --apply --dry-run)",
 		handler: (args, ctx) => cropHandler(pi, ctx, args),
 		getArgumentCompletions: (prefix) => {
 			const flags = ["--top", "--auto", "--apply", "--dry-run", "--min-tokens", "--older-than", "--keep"];
@@ -812,16 +812,15 @@ async function runPanel(
 
 export function registerPanel(pi: ExtensionAPI, draft: DraftFn): void {
 	pi.registerCommand("panel", {
-		description: "pi-context-compress: full-screen context panel (tree · crop · consumers · decisions)",
+		description: "pi-compress: full-screen context panel (tree · crop · consumers · decisions)",
 		handler: (_args, ctx) => runPanel(pi, ctx, draft),
 	});
 	pi.registerShortcut("ctrl+q", {
-		description: "pi-context-compress: open the context panel",
+		description: "pi-compress: open the context panel",
 		handler: () => pi.sendUserMessage("/panel", { expandPromptTemplates: true }),
 	});
 	pi.registerCommand("decisions", {
-		description:
-			"pi-context-compress: decision records on the current trunk (F7) — --export [path] for portable markdown",
+		description: "pi-compress: decision records on the current trunk (F7) — --export [path] for portable markdown",
 		handler: async (args, ctx) => {
 			const parsed = parseDecisionArgs(args);
 			if (parsed.export) {
