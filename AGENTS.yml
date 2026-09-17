@@ -1,8 +1,9 @@
 pi-preload:
   presets:
     - "pi-extension"
-  files:
+  includes:
     - "package.json"
     - "tsconfig.json"
     - "src/**/*.ts"
-    - "!tests/**/*"
+  excludes:
+    - "tests/**/*"
