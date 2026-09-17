@@ -112,6 +112,7 @@ export interface ContextPanelOptions {
 }
 
 class PanelController {
+	readonly input: PanelInput;
 	view: PanelView;
 	cropMode: "result" | "turn" = "result";
 	readonly marks = new Set<string>();
@@ -120,7 +121,8 @@ class PanelController {
 	inspectId: string | undefined;
 	inspectOffset = 0;
 
-	constructor(readonly input: PanelInput) {
+	constructor(input: PanelInput) {
+		this.input = input;
 		this.view = input.initialView ?? "tree";
 		for (const id of input.premark ?? []) this.marks.add(id);
 	}
