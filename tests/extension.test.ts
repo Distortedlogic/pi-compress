@@ -1256,8 +1256,8 @@ const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "in
 
 describe.skipIf(!PI)("RPC integration", () => {
 	it("loads the source extension and returns all fixed commands", { timeout: 30_000 }, async () => {
-		const cwd = mkdtempSync(join(tmpdir(), "context-compress-rpc-"));
-		const agentDir = mkdtempSync(join(tmpdir(), "context-compress-agent-"));
+		const cwd = mkdtempSync(join(tmpdir(), "pi-compress-rpc-"));
+		const agentDir = mkdtempSync(join(tmpdir(), "pi-compress-agent-"));
 		const child = spawn(PI as string, ["--mode", "rpc", "-e", EXTENSION], {
 			cwd,
 			stdio: ["pipe", "pipe", "pipe"],
