@@ -1,3 +1,5 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import type { AssistantMessage, ToolCall } from "@earendil-works/pi-ai";
 import {
 	createEventBus,
@@ -8,7 +10,6 @@ import {
 	type TreeSelectorComponent,
 } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { describe, expect, it } from "vitest";
 import {
 	aggregateConsumers,
 	band,
@@ -61,7 +62,6 @@ import { applyRewrite, candidateByEntryId, prepareRewrite, rangeCandidates, sour
 initTheme("dark");
 
 const HASH_A = "a".repeat(64);
-const HASH_B = "b".repeat(64);
 
 function usage() {
 	return {
@@ -253,24 +253,28 @@ function mutationApi(manager: SessionManager): ExtensionAPI {
 }
 
 describe("estimation and consumers", () => {
-	it.each([
+	for (const [tokens, expected] of [
 		[0, "0"],
 		[950, "950"],
 		[19_400, "19.4k"],
 		[200_000, "200k"],
-	])("formats %i tokens as %s", (tokens, expected) => {
-		expect(fmtTokens(tokens)).toBe(expected);
-	});
+	] as const) {
+		it(`formats ${tokens} tokens as ${expected}`, () => {
+			assert.equal(fmtTokens(tokens), expected);
+		});
+	}
 
-	it.each([
+	for (const [percent, expected] of [
 		[4.9, "low"],
 		[5, "healthy"],
 		[15, "filling"],
 		[40, "filling"],
 		[40.1, "red"],
-	])("maps %s percent to %s", (percent, expected) => {
-		expect(band(percent)).toBe(expected);
-	});
+	] as const) {
+		it(`maps ${percent} percent to ${expected}`, () => {
+			assert.equal(band(percent), expected);
+		});
+	}
 
 	it("counts image input and groups context by source", () => {
 		const session = new MemorySession();
@@ -281,10 +285,10 @@ describe("estimation and consumers", () => {
 		});
 		const result = session.toolUse("read", { path: "large.txt" }, "x".repeat(8_000));
 		const snapshot = snapshotSession(session.manager);
-		expect(estimateEntryTokens(session.manager.getEntry(result.call)!)).toBeGreaterThan(0);
+		assert.ok(estimateEntryTokens(session.manager.getEntry(result.call)!) > 0);
 		const consumers = aggregateConsumers(snapshot.contextEntries);
-		expect(consumers[0]?.key).toBe("read");
-		expect(consumers.reduce((total, row) => total + row.share, 0)).toBeCloseTo(1);
+		assert.equal(consumers[0]?.key, "read");
+		assert.ok(Math.abs(consumers.reduce((total, row) => total + row.share, 0) - 1) < 0.005);
 	});
 });
 
@@ -292,23 +296,26 @@ describe("crop and whole-turn planning", () => {
 	it("protects the latest result and keeps matching tools or arguments during auto selection", () => {
 		const { old, latest, snapshot } = cropScenario();
 		const candidates = cropCandidates(snapshot);
-		expect(candidates.find((candidate) => candidate.entryId === old.result)?.protected).toBe(false);
-		expect(candidates.find((candidate) => candidate.entryId === latest.result)?.protected).toBe(true);
-		expect(autoSelect(candidates, { minTokens: 1, olderThanTurns: 0 })).toContain(old.result);
-		expect(autoSelect(candidates, { minTokens: 1, olderThanTurns: 0, keep: ["chrome.*"] })).not.toContain(old.result);
-		expect(autoSelect(candidates, { minTokens: 1, olderThanTurns: 0, keep: ["tab-*"] })).not.toContain(old.result);
+		assert.equal(candidates.find((candidate) => candidate.entryId === old.result)?.protected, false);
+		assert.equal(candidates.find((candidate) => candidate.entryId === latest.result)?.protected, true);
+		assert.ok(autoSelect(candidates, { minTokens: 1, olderThanTurns: 0 }).includes(old.result));
+		assert.ok(!autoSelect(candidates, { minTokens: 1, olderThanTurns: 0, keep: ["chrome.*"] }).includes(old.result));
+		assert.ok(!autoSelect(candidates, { minTokens: 1, olderThanTurns: 0, keep: ["tab-*"] }).includes(old.result));
 	});
 
 	it("stubs selected results, keeps continuation order, and preserves originals", () => {
 		const { old, snapshot } = cropScenario();
 		const plan = planCrop(snapshot, [old.result]);
 		const rendered = renderReconstruction(plan);
-		expect(plan.startEntryId).toBe(old.call);
-		expect(plan.stubs[0]?.sha8).toMatch(/^[a-f0-9]{8}$/);
-		expect(rendered).toContain("[cropped: chrome.snapshot tab-audit");
-		expect(rendered).toContain("analysis");
-		expect(rendered).not.toContain("A".repeat(200));
-		expect(snapshot.entries.find((entry) => entry.id === old.result)).toBeDefined();
+		assert.equal(plan.startEntryId, old.call);
+		assert.match(plan.stubs[0]?.sha8 ?? "", /^[a-f0-9]{8}$/);
+		assert.ok(rendered.includes("[cropped: chrome.snapshot tab-audit"));
+		assert.ok(rendered.includes("analysis"));
+		assert.ok(!rendered.includes("A".repeat(200)));
+		assert.notEqual(
+			snapshot.entries.find((entry) => entry.id === old.result),
+			undefined,
+		);
 	});
 
 	it("removes complete non-current turns and keeps a recovery marker", () => {
@@ -322,13 +329,13 @@ describe("crop and whole-turn planning", () => {
 		session.assistant("keep this answer");
 		const snapshot = snapshotSession(session.manager);
 		const turns = contextTurns(snapshot);
-		expect(turns.map((turn) => turn.userId)).toContain(removed);
+		assert.ok(turns.map((turn) => turn.userId).includes(removed));
 		const plan = planRemoveTurns(snapshot, [removed]);
 		const rendered = renderReconstruction(plan);
-		expect(plan.dropped[0]?.entryIds.length).toBe(4);
-		expect(rendered).toContain("[dropped turn —");
-		expect(rendered).not.toContain("remove this question");
-		expect(rendered).toContain("keep this answer");
+		assert.equal(plan.dropped[0]?.entryIds.length, 4);
+		assert.ok(rendered.includes("[dropped turn —"));
+		assert.ok(!rendered.includes("remove this question"));
+		assert.ok(rendered.includes("keep this answer"));
 	});
 });
 
@@ -336,12 +343,12 @@ describe("shared range safety", () => {
 	it("keeps a tool call and all contiguous results in one atomic group", () => {
 		const { old, snapshot } = cropScenario();
 		const groups = candidateByEntryId(rangeCandidates(snapshot));
-		expect(groups.get(old.result)?.entryIds).toEqual([old.call, old.result]);
-		expect(groups.get(old.result)?.startEntryId).toBe(old.call);
-		expect(() => prepareRewrite(snapshot, old.result, old.result)).toThrow(/split a required tool-call group/);
+		assert.deepEqual(groups.get(old.result)?.entryIds, [old.call, old.result]);
+		assert.equal(groups.get(old.result)?.startEntryId, old.call);
+		assert.throws(() => prepareRewrite(snapshot, old.result, old.result), /split a required tool-call group/);
 	});
 
-	it.each([
+	for (const [name, build] of [
 		[
 			"root range",
 			() => {
@@ -395,12 +402,14 @@ describe("shared range safety", () => {
 				return { snapshot: snapshotSession(session.manager), start: result, end: result };
 			},
 		],
-	])("rejects %s", (_name, build) => {
-		const value = build();
-		expect(() => prepareRewrite(value.snapshot, value.start, value.end)).toThrow();
-	});
+	] as const) {
+		it(`rejects ${name}`, () => {
+			const value = build();
+			assert.throws(() => prepareRewrite(value.snapshot, value.start, value.end));
+		});
+	}
 
-	it.each([
+	for (const kind of [
 		"custom",
 		"model_change",
 		"thinking_level_change",
@@ -408,40 +417,42 @@ describe("shared range safety", () => {
 		"session_info",
 		"compaction",
 		"branch_summary",
-	] as const)("protects the %s metadata or structural boundary", (kind) => {
-		const session = new MemorySession();
-		session.user("root");
-		session.assistant("anchor");
-		const before = session.assistant("before boundary");
-		let boundary: string;
-		switch (kind) {
-			case "custom":
-				boundary = session.manager.appendCustomEntry("metadata");
-				break;
-			case "model_change":
-				boundary = session.manager.appendModelChange("openai", "other-model");
-				break;
-			case "thinking_level_change":
-				boundary = session.manager.appendThinkingLevelChange("high");
-				break;
-			case "label":
-				boundary = session.manager.appendLabelChange(before, "checkpoint");
-				break;
-			case "session_info":
-				boundary = session.manager.appendSessionInfo("named session");
-				break;
-			case "compaction":
-				boundary = session.manager.appendCompaction("summary", before, 100);
-				break;
-			case "branch_summary":
-				boundary = session.manager.branchWithSummary(before, "summary");
-				break;
-		}
-		const after = session.assistant("after boundary");
-		const snapshot = snapshotSession(session.manager);
-		expect(() => prepareRewrite(snapshot, boundary, boundary)).toThrow(/protected/);
-		if (kind !== "compaction") expect(() => prepareRewrite(snapshot, before, after)).toThrow(/protected/);
-	});
+	] as const) {
+		it(`protects the ${kind} metadata or structural boundary`, () => {
+			const session = new MemorySession();
+			session.user("root");
+			session.assistant("anchor");
+			const before = session.assistant("before boundary");
+			let boundary: string;
+			switch (kind) {
+				case "custom":
+					boundary = session.manager.appendCustomEntry("metadata");
+					break;
+				case "model_change":
+					boundary = session.manager.appendModelChange("openai", "other-model");
+					break;
+				case "thinking_level_change":
+					boundary = session.manager.appendThinkingLevelChange("high");
+					break;
+				case "label":
+					boundary = session.manager.appendLabelChange(before, "checkpoint");
+					break;
+				case "session_info":
+					boundary = session.manager.appendSessionInfo("named session");
+					break;
+				case "compaction":
+					boundary = session.manager.appendCompaction("summary", before, 100);
+					break;
+				case "branch_summary":
+					boundary = session.manager.branchWithSummary(before, "summary");
+					break;
+			}
+			const after = session.assistant("after boundary");
+			const snapshot = snapshotSession(session.manager);
+			assert.throws(() => prepareRewrite(snapshot, boundary, boundary), /protected/);
+			if (kind !== "compaction") assert.throws(() => prepareRewrite(snapshot, before, after), /protected/);
+		});
+	}
 
 	it("shows only legal starts in the first selector", async () => {
 		const session = new MemorySession();
@@ -453,9 +464,9 @@ describe("shared range safety", () => {
 		const ctx = extensionContext(session.manager);
 		const projections = captureRangeSelectors(ctx, [undefined]);
 		await rangeCompressHandler(mutationApi(session.manager), ctx, "");
-		expect(projections).toHaveLength(1);
-		expect(new Set(projections[0])).toEqual(new Set([anchor, after]));
-		expect(projections[0]).not.toEqual(expect.arrayContaining([metadata, pending]));
+		assert.equal(projections.length, 1);
+		assert.deepEqual(new Set(projections[0]), new Set([anchor, after]));
+		assert.ok(![metadata, pending].some((entryId) => projections[0]?.includes(entryId)));
 	});
 
 	it("shows only legal ends and stops at the first protected boundary", async () => {
@@ -467,9 +478,9 @@ describe("shared range safety", () => {
 		const ctx = extensionContext(session.manager);
 		const projections = captureRangeSelectors(ctx, [start, undefined]);
 		await rangeCompressHandler(mutationApi(session.manager), ctx, "");
-		expect(projections).toHaveLength(2);
-		expect(projections[1]).toEqual([start]);
-		expect(projections[1]).not.toEqual(expect.arrayContaining([boundary, later]));
+		assert.equal(projections.length, 2);
+		assert.deepEqual(projections[1], [start]);
+		assert.ok(![boundary, later].some((entryId) => projections[1]?.includes(entryId)));
 	});
 
 	it("omits inactive branches from both selector projections", async () => {
@@ -482,9 +493,9 @@ describe("shared range safety", () => {
 		const ctx = extensionContext(session.manager);
 		const projections = captureRangeSelectors(ctx, [anchor, undefined]);
 		await rangeCompressHandler(mutationApi(session.manager), ctx, "");
-		expect(projections).toHaveLength(2);
-		expect(projections.flat()).not.toContain(inactive);
-		expect(projections[0]).toEqual(expect.arrayContaining([anchor, active]));
+		assert.equal(projections.length, 2);
+		assert.ok(!projections.flat().includes(inactive));
+		assert.ok([anchor, active].every((entryId) => projections[0]?.includes(entryId)));
 	});
 
 	it("requires confirmation after the native two-pass range selection", async () => {
@@ -507,22 +518,22 @@ describe("shared range safety", () => {
 			});
 		const before = session.manager.getEntries().length;
 		await rangeCompressHandler(mutationApi(session.manager), ctx, "");
-		expect(selections).toBe(2);
-		expect(session.manager.getEntries()).toHaveLength(before);
+		assert.equal(selections, 2);
+		assert.equal(session.manager.getEntries().length, before);
 	});
 
 	it("keeps complete selected source, a stable hash, and unchanged continuation", () => {
 		const { old, snapshot } = cropScenario();
 		const plan = prepareRewrite(snapshot, old.call, old.result);
-		expect(plan.source).toContain("A".repeat(20_000));
-		expect(plan.source).not.toContain("(truncated)");
-		expect(plan.sourceSha256).toMatch(/^[a-f0-9]{64}$/);
-		expect(sourceSha8(plan)).toBe(plan.sourceSha256.slice(0, 8));
-		expect(prepareRewrite(snapshot, old.call, old.result).sourceSha256).toBe(plan.sourceSha256);
+		assert.ok(plan.source.includes("A".repeat(20_000)));
+		assert.ok(!plan.source.includes("(truncated)"));
+		assert.match(plan.sourceSha256, /^[a-f0-9]{64}$/);
+		assert.equal(sourceSha8(plan), plan.sourceSha256.slice(0, 8));
+		assert.equal(prepareRewrite(snapshot, old.call, old.result).sourceSha256, plan.sourceSha256);
 		const rendered = renderRangeTail(plan, "approved summary");
-		expect(rendered).toContain("approved summary");
-		expect(rendered).toContain("unchanged continuation");
-		expect(rendered).not.toContain("A".repeat(200));
+		assert.ok(rendered.includes("approved summary"));
+		assert.ok(rendered.includes("unchanged continuation"));
+		assert.ok(!rendered.includes("A".repeat(200)));
 	});
 
 	it("plans a long session within a bounded time", () => {
@@ -539,8 +550,8 @@ describe("shared range safety", () => {
 		session.assistant("leaf");
 		const start = performance.now();
 		const plan = prepareRewrite(snapshotSession(session.manager), first, last);
-		expect(plan.selectedEntryIds).toHaveLength(500);
-		expect(performance.now() - start).toBeLessThan(2_000);
+		assert.equal(plan.selectedEntryIds.length, 500);
+		assert.ok(performance.now() - start < 2_000);
 	});
 });
 
@@ -558,9 +569,8 @@ describe("shared rewrite apply", () => {
 		};
 	}
 
-	it.each(["session", "leaf", "selected", "continuation", "hash"])(
-		"rejects changed %s before navigation or writes",
-		async (change) => {
+	for (const change of ["session", "leaf", "selected", "continuation", "hash"] as const) {
+		it(`rejects changed ${change} before navigation or writes`, async () => {
 			const world = validWorld();
 			let plan = world.plan;
 			if (change === "session") plan = { ...plan, sessionId: "other" };
@@ -570,15 +580,15 @@ describe("shared rewrite apply", () => {
 				plan = { ...plan, continuationEntryIds: [...plan.continuationEntryIds, "other"] };
 			}
 			if (change === "hash") plan = { ...plan, sourceSha256: "0".repeat(64) };
-			await expect(
+			await assert.rejects(
 				applyRewrite(world.pi, world.ctx, plan, {
 					messages: [{ customType: CTREE_CROP_TAIL, content: "replacement", display: true }],
 					marker: { customType: CTREE_CROP, data: {} },
 				}),
-			).rejects.toThrow();
-			expect(world.session.manager.getEntries().length).toBe(world.entriesBefore + (change === "leaf" ? 1 : 0));
-		},
-	);
+			);
+			assert.equal(world.session.manager.getEntries().length, world.entriesBefore + (change === "leaf" ? 1 : 0));
+		});
+	}
 
 	it("navigates without a summary, then appends replacements before the marker", async () => {
 		const world = validWorld();
@@ -586,12 +596,12 @@ describe("shared rewrite apply", () => {
 			messages: [{ customType: CTREE_CROP_TAIL, content: "replacement", display: true }],
 			marker: { customType: CTREE_CROP, data: { sourceLeafId: world.plan.sourceLeafId } },
 		});
-		expect(result).toBe(true);
+		assert.equal(result, true);
 		const branch = world.session.manager.getBranch();
-		expect(branch.slice(-2).map((entry) => ("customType" in entry ? entry.customType : entry.type))).toEqual([
-			CTREE_CROP_TAIL,
-			CTREE_CROP,
-		]);
+		assert.deepEqual(
+			branch.slice(-2).map((entry) => ("customType" in entry ? entry.customType : entry.type)),
+			[CTREE_CROP_TAIL, CTREE_CROP],
+		);
 	});
 });
 
@@ -618,16 +628,16 @@ describe("direct range compression API", () => {
 			endEntryId: world.selected,
 		};
 		const prepared: PreparedRangeCompression = await prepareRangeCompression(world.ctx, target);
-		expect(prepared.plan.selectedEntryIds).toEqual([world.selected]);
+		assert.deepEqual(prepared.plan.selectedEntryIds, [world.selected]);
 		const reviewed = await reviewRangeCompression(world.ctx, prepared);
-		expect(reviewed).toBeDefined();
-		const details = await applyPreparedRangeCompression(world.pi, world.ctx, reviewed!);
-		expect(details).toMatchObject({ operationId: "direct-operation", anchorId: world.anchor });
+		assert.ok(reviewed);
+		const details = await applyPreparedRangeCompression(world.pi, world.ctx, reviewed);
+		assert.partialDeepStrictEqual(details, { operationId: "direct-operation", anchorId: world.anchor });
 		const types = world.session.manager
 			.getBranch()
 			.filter((entry) => "customType" in entry)
 			.map((entry) => (entry as { customType: string }).customType);
-		expect(types.slice(-2)).toEqual([CTREE_RANGE_TAIL, CTREE_RANGE_COMPACT]);
+		assert.deepEqual(types.slice(-2), [CTREE_RANGE_TAIL, CTREE_RANGE_COMPACT]);
 	});
 
 	it("orchestrates explicit no-review compression", async () => {
@@ -639,8 +649,8 @@ describe("direct range compression API", () => {
 			review: false,
 		};
 		const outcome: RangeCompressionOutcome = await compressRange(world.pi, world.ctx, input);
-		expect(outcome.status).toBe("applied");
-		if (outcome.status === "applied") expect(outcome.details.operationId).toBe("automated-operation");
+		assert.equal(outcome.status, "applied");
+		if (outcome.status === "applied") assert.equal(outcome.details.operationId, "automated-operation");
 	});
 
 	it("cancels reviewed compression without writes when the editor closes", async () => {
@@ -654,19 +664,20 @@ describe("direct range compression API", () => {
 			endEntryId: world.selected,
 			review: true,
 		});
-		expect(outcome.status).toBe("cancelled");
-		expect(world.session.manager.getEntries()).toHaveLength(before);
+		assert.equal(outcome.status, "cancelled");
+		assert.equal(world.session.manager.getEntries().length, before);
 	});
 
 	it("rejects an empty model summary", async () => {
 		const world = directWorld(async () => assistantResponse(""));
-		await expect(
+		await assert.rejects(
 			prepareRangeCompression(world.ctx, {
 				operationId: "empty-summary",
 				startEntryId: world.selected,
 				endEntryId: world.selected,
 			}),
-		).rejects.toThrow(/empty draft/);
+			/empty draft/,
+		);
 	});
 
 	it("passes and honors the caller abort signal", async () => {
@@ -678,15 +689,16 @@ describe("direct range compression API", () => {
 			controller.signal.throwIfAborted();
 			return assistantResponse("unreachable");
 		});
-		await expect(
+		await assert.rejects(
 			prepareRangeCompression(world.ctx, {
 				operationId: "aborted",
 				startEntryId: world.selected,
 				endEntryId: world.selected,
 				signal: controller.signal,
 			}),
-		).rejects.toMatchObject({ name: "AbortError" });
-		expect(receivedSignal).toBe(controller.signal);
+			{ name: "AbortError" },
+		);
+		assert.equal(receivedSignal, controller.signal);
 	});
 
 	it("rejects a stale source leaf before applying", async () => {
@@ -698,8 +710,8 @@ describe("direct range compression API", () => {
 		});
 		world.session.user("changed leaf");
 		const before = world.session.manager.getEntries().length;
-		await expect(applyPreparedRangeCompression(world.pi, world.ctx, prepared)).rejects.toThrow(/leaf changed/);
-		expect(world.session.manager.getEntries()).toHaveLength(before);
+		await assert.rejects(applyPreparedRangeCompression(world.pi, world.ctx, prepared), /leaf changed/);
+		assert.equal(world.session.manager.getEntries().length, before);
 	});
 
 	it("rejects a changed session before applying", async () => {
@@ -710,20 +722,21 @@ describe("direct range compression API", () => {
 			endEntryId: world.selected,
 		});
 		world.session.manager.newSession();
-		await expect(applyPreparedRangeCompression(world.pi, world.ctx, prepared)).rejects.toThrow(/session changed/);
-		expect(world.session.manager.getEntries()).toHaveLength(0);
+		await assert.rejects(applyPreparedRangeCompression(world.pi, world.ctx, prepared), /session changed/);
+		assert.equal(world.session.manager.getEntries().length, 0);
 	});
 
 	it("rejects pending messages before preparation", async () => {
 		const world = directWorld();
 		(world.ctx as unknown as { hasPendingMessages: () => boolean }).hasPendingMessages = () => true;
-		await expect(
+		await assert.rejects(
 			prepareRangeCompression(world.ctx, {
 				operationId: "pending-messages",
 				startEntryId: world.selected,
 				endEntryId: world.selected,
 			}),
-		).rejects.toThrow(/messages are pending/);
+			/messages are pending/,
+		);
 	});
 
 	it("reports a model failure without writes", async () => {
@@ -731,14 +744,15 @@ describe("direct range compression API", () => {
 			throw new Error("provider failed");
 		});
 		const before = world.session.manager.getEntries().length;
-		await expect(
+		await assert.rejects(
 			prepareRangeCompression(world.ctx, {
 				operationId: "model-failure",
 				startEntryId: world.selected,
 				endEntryId: world.selected,
 			}),
-		).rejects.toThrow("provider failed");
-		expect(world.session.manager.getEntries()).toHaveLength(before);
+			/provider failed/,
+		);
+		assert.equal(world.session.manager.getEntries().length, before);
 	});
 });
 
@@ -800,29 +814,29 @@ describe("generic range compression service", () => {
 
 	it("supports prepare, status, apply, replay, cancel, missing, conflict, and session checks", async () => {
 		const world = serviceWorld();
-		expect((await world.request(world.action("status"))).status).toBe("missing");
-		expect((await world.request(world.prepare())).status).toBe("prepared");
-		expect((await world.request(world.action("status"))).status).toBe("prepared");
-		expect(await world.request(world.prepare("operation", { instructions: "different" }))).toMatchObject({
+		assert.equal((await world.request(world.action("status"))).status, "missing");
+		assert.equal((await world.request(world.prepare())).status, "prepared");
+		assert.equal((await world.request(world.action("status"))).status, "prepared");
+		assert.partialDeepStrictEqual(await world.request(world.prepare("operation", { instructions: "different" })), {
 			status: "failed",
 			code: "operation_conflict",
 		});
 		const applied = await world.request(world.action("apply"));
-		expect(applied.status).toBe("applied");
-		if (applied.status === "applied") expect(applied.details.operationId).toBe("operation");
-		expect((await world.request(world.action("apply"))).status).toBe("applied");
-		expect(await world.request(world.action("apply", "missing"))).toMatchObject({
+		assert.equal(applied.status, "applied");
+		if (applied.status === "applied") assert.equal(applied.details.operationId, "operation");
+		assert.equal((await world.request(world.action("apply"))).status, "applied");
+		assert.partialDeepStrictEqual(await world.request(world.action("apply", "missing")), {
 			status: "failed",
 			code: "not_prepared",
 		});
-		expect(await world.request(world.action("status", "other", { sessionId: "other" }))).toMatchObject({
+		assert.partialDeepStrictEqual(await world.request(world.action("status", "other", { sessionId: "other" })), {
 			status: "failed",
 			code: "session_changed",
 		});
 
 		const cancelled = serviceWorld();
-		expect((await cancelled.request(cancelled.action("cancel"))).status).toBe("cancelled");
-		expect((await cancelled.request(cancelled.action("status"))).status).toBe("cancelled");
+		assert.equal((await cancelled.request(cancelled.action("cancel"))).status, "cancelled");
+		assert.equal((await cancelled.request(cancelled.action("status"))).status, "cancelled");
 	});
 
 	it("reuses an identical in-flight preparation and rejects conflicting data", async () => {
@@ -845,11 +859,11 @@ describe("generic range compression service", () => {
 		await entered;
 		const duplicate = world.request({ ...original, requestId: "duplicate" });
 		const conflict = await world.request({ ...original, requestId: "conflict", instructions: "different" });
-		expect(conflict).toMatchObject({ status: "failed", code: "operation_conflict" });
+		assert.partialDeepStrictEqual(conflict, { status: "failed", code: "operation_conflict" });
 		release(assistantResponse("summary"));
-		expect((await first).status).toBe("prepared");
-		expect((await duplicate).status).toBe("prepared");
-		expect(calls).toBe(1);
+		assert.equal((await first).status, "prepared");
+		assert.equal((await duplicate).status, "prepared");
+		assert.equal(calls, 1);
 	});
 
 	it("aborts a pending preparation on cancel", async () => {
@@ -866,15 +880,15 @@ describe("generic range compression service", () => {
 		});
 		const preparing = world.request(world.prepare("cancel-pending"));
 		const signal = await started;
-		expect((await world.request(world.action("cancel", "cancel-pending"))).status).toBe("cancelled");
-		expect(signal.aborted).toBe(true);
-		expect((await preparing).status).toBe("cancelled");
+		assert.equal((await world.request(world.action("cancel", "cancel-pending"))).status, "cancelled");
+		assert.equal(signal.aborted, true);
+		assert.equal((await preparing).status, "cancelled");
 	});
 
 	it("returns busy for a concurrent session mutation", async () => {
 		const world = serviceWorld();
-		expect((await world.request(world.prepare("first"))).status).toBe("prepared");
-		expect((await world.request(world.prepare("second"))).status).toBe("prepared");
+		assert.equal((await world.request(world.prepare("first"))).status, "prepared");
+		assert.equal((await world.request(world.prepare("second"))).status, "prepared");
 		let enterNavigation: () => void = () => {};
 		let releaseNavigation: () => void = () => {};
 		const entered = new Promise<void>((resolve) => {
@@ -894,12 +908,12 @@ describe("generic range compression service", () => {
 		};
 		const applying = world.request(world.action("apply", "first"));
 		await entered;
-		expect(await world.request(world.action("apply", "second"))).toMatchObject({
+		assert.partialDeepStrictEqual(await world.request(world.action("apply", "second")), {
 			status: "failed",
 			code: "busy",
 		});
 		releaseNavigation();
-		expect((await applying).status).toBe("applied");
+		assert.equal((await applying).status, "applied");
 	});
 
 	it("aborts and removes pending state on session shutdown", async () => {
@@ -917,9 +931,9 @@ describe("generic range compression service", () => {
 		const preparing = world.request(world.prepare("shutdown"));
 		const signal = await started;
 		for (const handler of world.shutdownHandlers) await handler({}, world.ctx);
-		expect(signal.aborted).toBe(true);
-		expect((await preparing).status).toBe("cancelled");
-		expect((await world.request(world.action("status", "shutdown"))).status).toBe("missing");
+		assert.equal(signal.aborted, true);
+		assert.equal((await preparing).status, "cancelled");
+		assert.equal((await world.request(world.action("status", "shutdown"))).status, "missing");
 	});
 });
 
@@ -945,14 +959,14 @@ describe("batch compression", () => {
 		const world = batchSession();
 		const ctx = extensionContext(world.session.manager);
 		const plan = prepareCompression(ctx, world.anchor, world.settled, "operation");
-		expect(plan.taskMessageEntryId).toBe(world.task);
-		expect(plan.source).toContain("batch completed");
+		assert.equal(plan.taskMessageEntryId, world.task);
+		assert.ok(plan.source.includes("batch completed"));
 		await applyCompression(mutationApi(world.session.manager), ctx, "run", batch, plan, "summary");
 		const types = world.session.manager
 			.getBranch()
 			.filter((entry) => "customType" in entry)
 			.map((entry) => (entry as { customType: string }).customType);
-		expect(types.slice(-3)).toEqual([QUEUED_TASK_TAIL, COMPRESSION_TAIL, COMPRESSION_ENTRY]);
+		assert.deepEqual(types.slice(-3), [QUEUED_TASK_TAIL, COMPRESSION_TAIL, COMPRESSION_ENTRY]);
 	});
 });
 
@@ -961,7 +975,7 @@ describe("serializer source policy", () => {
 		const { snapshot } = cropScenario();
 		const full = serializeEntries(snapshot.contextEntries);
 		const capped = serializeEntries(snapshot.contextEntries, { perEntryCap: 100 });
-		expect(full.length).toBeGreaterThan(capped.length);
-		expect(capped).toContain("(truncated)");
+		assert.ok(full.length > capped.length);
+		assert.ok(capped.includes("(truncated)"));
 	});
 });

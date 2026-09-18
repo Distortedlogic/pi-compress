@@ -1,8 +1,10 @@
+import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { AssistantMessage, Model, ToolCall } from "@earendil-works/pi-ai";
 import {
@@ -14,7 +16,6 @@ import {
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, visibleWidth } from "@earendil-works/pi-tui";
-import { beforeEach, describe, expect, it } from "vitest";
 import { refreshAmbient, registerAmbient, resetAmbient } from "../src/ambient.ts";
 import {
 	branchHandler,
@@ -430,10 +431,10 @@ describe("extension registration and policy", () => {
 	it("registers every fixed command, Ctrl+Q, event integration, and the decision renderer", () => {
 		const value = world();
 		piContextCompress(value.pi);
-		expect([...value.commands.keys()]).toEqual(["branch", "merge", "crop", "compress", "panel", "decisions", "undo"]);
-		expect([...value.shortcuts.keys()]).toEqual(["ctrl+q"]);
-		expect(value.renderers.has(CTREE_DECISION)).toBe(true);
-		expect(value.handlers.has("session_start")).toBe(true);
+		assert.deepEqual([...value.commands.keys()], ["branch", "merge", "crop", "compress", "panel", "decisions", "undo"]);
+		assert.deepEqual([...value.shortcuts.keys()], ["ctrl+q"]);
+		assert.equal(value.renderers.has(CTREE_DECISION), true);
+		assert.equal(value.handlers.has("session_start"), true);
 	});
 
 	it("registers the generic range compression service", async () => {
@@ -458,18 +459,18 @@ describe("extension registration and policy", () => {
 				context: value.ctx,
 			});
 		});
-		expect(result.status).toBe("missing");
+		assert.equal(result.status, "missing");
 	});
 
 	it("keeps package entry points on the root source files", () => {
 		const packagePath = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
 		const manifest = JSON.parse(readFileSync(packagePath, "utf8"));
-		expect(manifest.exports).toEqual({
+		assert.deepEqual(manifest.exports, {
 			".": "./src/index.ts",
 			"./protocol": "./src/protocol.ts",
 			"./range-compression": "./src/range-compression.ts",
 		});
-		expect(manifest.pi.extensions).toEqual(["./src/index.ts"]);
+		assert.deepEqual(manifest.pi.extensions, ["./src/index.ts"]);
 	});
 });
 
@@ -479,11 +480,11 @@ describe("range safety and rewrite contracts", () => {
 		const rootId = value.session.user("root");
 		value.session.assistant("answer");
 		const incompleteId = value.session.user("unfinished");
-		expect(candidateFor(value, rootId)).toMatchObject({
+		assert.partialDeepStrictEqual(candidateFor(value, rootId), {
 			protected: true,
 			protectReason: "no anchor before this message group",
 		});
-		expect(candidateFor(value, incompleteId)).toMatchObject({
+		assert.partialDeepStrictEqual(candidateFor(value, incompleteId), {
 			protected: true,
 			protectReason: "incomplete current user turn",
 		});
@@ -515,39 +516,41 @@ describe("range safety and rewrite contracts", () => {
 			timestamp: 11,
 		});
 		const candidate = candidateFor(value, assistantId);
-		expect(candidate).toMatchObject({
+		assert.partialDeepStrictEqual(candidate, {
 			startEntryId: assistantId,
 			endEntryId: secondResultId,
 			protected: false,
 		});
-		expect(candidate?.entryIds).toEqual([assistantId, firstResultId, secondResultId]);
+		assert.deepEqual(candidate?.entryIds, [assistantId, firstResultId, secondResultId]);
 	});
 
-	it.each([
+	for (const [name, resultCallId] of [
 		["missing", undefined],
 		["mismatched", "wrong-call"],
-	] as const)("protects %s assistant tool-call groups", (_name, resultCallId) => {
-		const value = world();
-		value.session.user("root");
-		value.session.assistant("anchor");
-		const assistantId = value.session.assistant("", [
-			{ type: "toolCall", id: "expected-call", name: "read", arguments: { path: "a.ts" } },
-		]);
-		if (resultCallId) {
-			value.session.manager.appendMessage({
-				role: "toolResult",
-				toolCallId: resultCallId,
-				toolName: "read",
-				content: [{ type: "text", text: "wrong" }],
-				isError: false,
-				timestamp: 12,
+	] as const) {
+		it(`protects ${name} assistant tool-call groups`, () => {
+			const value = world();
+			value.session.user("root");
+			value.session.assistant("anchor");
+			const assistantId = value.session.assistant("", [
+				{ type: "toolCall", id: "expected-call", name: "read", arguments: { path: "a.ts" } },
+			]);
+			if (resultCallId) {
+				value.session.manager.appendMessage({
+					role: "toolResult",
+					toolCallId: resultCallId,
+					toolName: "read",
+					content: [{ type: "text", text: "wrong" }],
+					isError: false,
+					timestamp: 12,
+				});
+			}
+			assert.partialDeepStrictEqual(candidateFor(value, assistantId), {
+				protected: true,
+				protectReason: "incomplete assistant tool-call group",
 			});
-		}
-		expect(candidateFor(value, assistantId)).toMatchObject({
-			protected: true,
-			protectReason: "incomplete assistant tool-call group",
 		});
-	});
+	}
 
 	it("protects standalone tool results and decision records", () => {
 		const value = world();
@@ -566,11 +569,11 @@ describe("range safety and rewrite contracts", () => {
 			forkEntryId: "fork",
 			branchName: "choice",
 		});
-		expect(candidateFor(value, toolResultId)).toMatchObject({
+		assert.partialDeepStrictEqual(candidateFor(value, toolResultId), {
 			protected: true,
 			protectReason: "tool result without its assistant tool call",
 		});
-		expect(candidateFor(value, decisionId)).toMatchObject({
+		assert.partialDeepStrictEqual(candidateFor(value, decisionId), {
 			protected: true,
 			protectReason: "decision record",
 		});
@@ -581,7 +584,7 @@ describe("range safety and rewrite contracts", () => {
 		branchValue.session.user("root");
 		const branchAnchor = branchValue.session.assistant("anchor");
 		const branchSummaryId = branchValue.session.manager.branchWithSummary(branchAnchor, "branch summary");
-		expect(candidateFor(branchValue, branchSummaryId)).toMatchObject({
+		assert.partialDeepStrictEqual(candidateFor(branchValue, branchSummaryId), {
 			protected: true,
 			protectReason: "structural context entry",
 		});
@@ -592,7 +595,7 @@ describe("range safety and rewrite contracts", () => {
 		const keptId = compactValue.session.user("kept");
 		compactValue.session.assistant("kept answer");
 		const compactionId = compactValue.session.manager.appendCompaction("compact summary", keptId, 100);
-		expect(candidateFor(compactValue, compactionId)).toMatchObject({
+		assert.partialDeepStrictEqual(candidateFor(compactValue, compactionId), {
 			protected: true,
 			protectReason: "structural context entry",
 		});
@@ -608,7 +611,7 @@ describe("range safety and rewrite contracts", () => {
 			metadataValue.session.manager.appendSessionInfo("session"),
 		];
 		for (const entryId of metadataIds) {
-			expect(candidateFor(metadataValue, entryId)).toMatchObject({
+			assert.partialDeepStrictEqual(candidateFor(metadataValue, entryId), {
 				protected: true,
 				protectReason: "context-inert session metadata",
 			});
@@ -621,15 +624,16 @@ describe("range safety and rewrite contracts", () => {
 		const snapshot = snapshotSession(value.session.manager);
 		const plan = prepareRewrite(snapshot, seed.startId, seed.endId);
 		const expectedSource = "user: selected question\n\nassistant: selected answer";
-		expect(plan.anchorId).toBe(seed.anchorId);
-		expect(plan.selectedEntryIds).toEqual([seed.startId, seed.endId]);
-		expect(plan.continuationEntryIds).toEqual([seed.continuationUserId, seed.leafId]);
-		expect(plan.source).toBe(expectedSource);
-		expect(plan.continuationSerialized).toBe("user: continuation question\n\nassistant: continuation answer");
-		expect(plan.selectedEstTokens).toBe(
+		assert.equal(plan.anchorId, seed.anchorId);
+		assert.deepEqual(plan.selectedEntryIds, [seed.startId, seed.endId]);
+		assert.deepEqual(plan.continuationEntryIds, [seed.continuationUserId, seed.leafId]);
+		assert.equal(plan.source, expectedSource);
+		assert.equal(plan.continuationSerialized, "user: continuation question\n\nassistant: continuation answer");
+		assert.equal(
+			plan.selectedEstTokens,
 			plan.selectedEntries.reduce((total, entry) => total + estimateEntryTokens(entry), 0),
 		);
-		expect(plan.sourceSha256).toBe(createHash("sha256").update(expectedSource).digest("hex"));
+		assert.equal(plan.sourceSha256, createHash("sha256").update(expectedSource).digest("hex"));
 	});
 
 	it("rejects session, leaf, anchor, selected-source, and continuation changes", () => {
@@ -640,13 +644,13 @@ describe("range safety and rewrite contracts", () => {
 			sessionSeed.startId,
 			sessionSeed.endId,
 		);
-		expect(() => revalidateRewrite(world().ctx, sessionPlan)).toThrow("session changed");
+		assert.throws(() => revalidateRewrite(world().ctx, sessionPlan), /session changed/);
 
 		const leafChanged = world();
 		const leafSeed = seedRange(leafChanged);
 		const leafPlan = prepareRewrite(snapshotSession(leafChanged.session.manager), leafSeed.startId, leafSeed.endId);
 		leafChanged.session.user("new leaf");
-		expect(() => revalidateRewrite(leafChanged.ctx, leafPlan)).toThrow("leaf changed");
+		assert.throws(() => revalidateRewrite(leafChanged.ctx, leafPlan), /leaf changed/);
 
 		const anchorMissing = world();
 		const anchorSeed = seedRange(anchorMissing);
@@ -655,8 +659,9 @@ describe("range safety and rewrite contracts", () => {
 			anchorSeed.startId,
 			anchorSeed.endId,
 		);
-		expect(() => revalidateRewrite(anchorMissing.ctx, { ...anchorPlan, anchorId: "missing-anchor" })).toThrow(
-			"anchor is no longer available",
+		assert.throws(
+			() => revalidateRewrite(anchorMissing.ctx, { ...anchorPlan, anchorId: "missing-anchor" }),
+			/anchor is no longer available/,
 		);
 
 		const sourceChanged = world();
@@ -667,11 +672,11 @@ describe("range safety and rewrite contracts", () => {
 			sourceSeed.endId,
 		);
 		const sourceEntry = sourceChanged.session.manager.getEntry(sourceSeed.startId);
-		if (!sourceEntry || sourceEntry.type !== "message" || sourceEntry.message.role !== "user") {
+		if (sourceEntry?.type !== "message" || sourceEntry.message.role !== "user") {
 			throw new Error("selected source fixture is invalid");
 		}
 		sourceEntry.message.content = "changed selected question";
-		expect(() => revalidateRewrite(sourceChanged.ctx, sourcePlan)).toThrow("source changed");
+		assert.throws(() => revalidateRewrite(sourceChanged.ctx, sourcePlan), /source changed/);
 
 		const continuationChanged = world();
 		const continuationSeed = seedRange(continuationChanged);
@@ -683,7 +688,7 @@ describe("range safety and rewrite contracts", () => {
 		const continuationLeaf = continuationChanged.session.manager.getEntry(continuationSeed.leafId);
 		if (!continuationLeaf) throw new Error("continuation fixture is invalid");
 		continuationLeaf.parentId = continuationSeed.endId;
-		expect(() => revalidateRewrite(continuationChanged.ctx, continuationPlan)).toThrow("source changed");
+		assert.throws(() => revalidateRewrite(continuationChanged.ctx, continuationPlan), /source changed/);
 	});
 
 	it("applies rewrites by branching and keeps the original source leaf recoverable", async () => {
@@ -695,13 +700,14 @@ describe("range safety and rewrite contracts", () => {
 			messages: [{ customType: "test/tail", content: "replacement", display: true }],
 			marker: { customType: "test/marker", data: { sourceLeafId: seed.leafId } },
 		});
-		expect(result).toBe(true);
-		expect(value.session.manager.getEntries()).toHaveLength(countBefore + 2);
-		expect(durableSequence(value.session.manager)).toEqual(["test/tail", "test/marker"]);
+		assert.equal(result, true);
+		assert.equal(value.session.manager.getEntries().length, countBefore + 2);
+		assert.deepEqual(durableSequence(value.session.manager), ["test/tail", "test/marker"]);
 		const originalBranchIds = value.session.manager.getBranch(seed.leafId).map((entry) => entry.id);
-		expect(originalBranchIds).toEqual(expect.arrayContaining([...plan.selectedEntryIds, ...plan.continuationEntryIds]));
-		for (const entryId of [...plan.selectedEntryIds, ...plan.continuationEntryIds]) {
-			expect(value.session.manager.getEntry(entryId)).toBeDefined();
+		const preservedEntryIds = [...plan.selectedEntryIds, ...plan.continuationEntryIds];
+		assert.ok(preservedEntryIds.every((entryId) => originalBranchIds.includes(entryId)));
+		for (const entryId of preservedEntryIds) {
+			assert.notEqual(value.session.manager.getEntry(entryId), undefined);
 		}
 	});
 
@@ -717,9 +723,9 @@ describe("range safety and rewrite contracts", () => {
 			messages: [{ customType: "test/tail", content: "replacement", display: true }],
 			marker: { customType: "test/marker", data: {} },
 		});
-		expect(result).toBe(false);
-		expect(value.session.manager.getEntries()).toEqual(entriesBefore);
-		expect(value.session.manager.getLeafId()).toBe(seed.leafId);
+		assert.equal(result, false);
+		assert.deepEqual(value.session.manager.getEntries(), entriesBefore);
+		assert.equal(value.session.manager.getLeafId(), seed.leafId);
 	});
 });
 
@@ -729,40 +735,42 @@ describe("range compression protocol", () => {
 		const seed = seedRange(value);
 		registerRangeCompressionService(value.pi);
 		const operationId = "range-main";
-		expect(
+		assert.partialDeepStrictEqual(
 			await sendRangeRequest(value, rangeControlRequest(value, "status-before", operationId, "status")),
-		).toMatchObject({
-			status: "missing",
-		});
-		expect(
+			{ status: "missing" },
+		);
+		assert.partialDeepStrictEqual(
 			await sendRangeRequest(value, rangeControlRequest(value, "apply-before", operationId, "apply")),
-		).toMatchObject({
-			status: "failed",
-			code: "not_prepared",
-		});
+			{ status: "failed", code: "not_prepared" },
+		);
 		const prepare = rangePrepareRequest(value, seed, "prepare", operationId);
-		expect(await sendRangeRequest(value, prepare)).toMatchObject({ status: "prepared" });
-		expect(await sendRangeRequest(value, { ...prepare, requestId: "prepare-duplicate" })).toMatchObject({
+		assert.partialDeepStrictEqual(await sendRangeRequest(value, prepare), { status: "prepared" });
+		assert.partialDeepStrictEqual(await sendRangeRequest(value, { ...prepare, requestId: "prepare-duplicate" }), {
 			status: "prepared",
 		});
-		expect(
+		assert.partialDeepStrictEqual(
 			await sendRangeRequest(
 				value,
 				rangePrepareRequest(value, seed, "prepare-conflict", operationId, { review: true }),
 			),
-		).toMatchObject({ status: "failed", code: "operation_conflict" });
-		expect(
+			{ status: "failed", code: "operation_conflict" },
+		);
+		assert.partialDeepStrictEqual(
 			await sendRangeRequest(value, rangeControlRequest(value, "status-after", operationId, "status")),
-		).toMatchObject({
-			status: "prepared",
-		});
+			{ status: "prepared" },
+		);
 		const applied = await sendRangeRequest(value, rangeControlRequest(value, "apply", operationId, "apply"));
-		expect(applied).toMatchObject({ status: "applied" });
-		expect(durableSequence(value.session.manager)).toEqual([CTREE_RANGE_TAIL, CTREE_RANGE_COMPACT]);
-		expect(value.session.manager.getBranch(seed.leafId).map((entry) => entry.id)).toContain(seed.endId);
+		assert.partialDeepStrictEqual(applied, { status: "applied" });
+		assert.deepEqual(durableSequence(value.session.manager), [CTREE_RANGE_TAIL, CTREE_RANGE_COMPACT]);
+		assert.ok(
+			value.session.manager
+				.getBranch(seed.leafId)
+				.map((entry) => entry.id)
+				.includes(seed.endId),
+		);
 		const repeated = await sendRangeRequest(value, rangeControlRequest(value, "apply-repeat", operationId, "apply"));
-		expect(repeated).toMatchObject({ status: "applied" });
-		expect(durableSequence(value.session.manager)).toEqual([CTREE_RANGE_TAIL, CTREE_RANGE_COMPACT]);
+		assert.partialDeepStrictEqual(repeated, { status: "applied" });
+		assert.deepEqual(durableSequence(value.session.manager), [CTREE_RANGE_TAIL, CTREE_RANGE_COMPACT]);
 	});
 
 	it("deduplicates an in-flight prepare and reports conflicts and busy actions", async () => {
@@ -781,30 +789,30 @@ describe("range compression protocol", () => {
 		const first = sendRangeRequest(value, prepare);
 		await started.promise;
 		const duplicate = sendRangeRequest(value, { ...prepare, requestId: "pending-duplicate" });
-		expect(
+		assert.partialDeepStrictEqual(
 			await sendRangeRequest(
 				value,
 				rangePrepareRequest(value, seed, "pending-conflict", operationId, { review: true }),
 			),
-		).toMatchObject({ status: "failed", code: "operation_conflict" });
-		expect(
+			{ status: "failed", code: "operation_conflict" },
+		);
+		assert.partialDeepStrictEqual(
 			await sendRangeRequest(value, rangeControlRequest(value, "pending-apply", operationId, "apply")),
-		).toMatchObject({
-			status: "failed",
-			code: "busy",
-		});
+			{ status: "failed", code: "busy" },
+		);
 		release.resolve(assistantResponse("range summary"));
-		expect(await first).toMatchObject({ status: "prepared" });
-		expect(await duplicate).toMatchObject({ status: "prepared" });
+		assert.partialDeepStrictEqual(await first, { status: "prepared" });
+		assert.partialDeepStrictEqual(await duplicate, { status: "prepared" });
 	});
 
 	it("cancels absent, preparing, and prepared operations, including the model signal", async () => {
 		const absent = world();
 		seedRange(absent);
 		registerRangeCompressionService(absent.pi);
-		expect(
+		assert.partialDeepStrictEqual(
 			await sendRangeRequest(absent, rangeControlRequest(absent, "cancel-absent", "range-absent", "cancel")),
-		).toMatchObject({ status: "cancelled" });
+			{ status: "cancelled" },
+		);
 
 		const preparing = world();
 		const preparingSeed = seedRange(preparing);
@@ -836,14 +844,15 @@ describe("range compression protocol", () => {
 			rangePrepareRequest(preparing, preparingSeed, "cancel-preparing-prepare", preparingOperation),
 		);
 		await started.promise;
-		expect(
+		assert.partialDeepStrictEqual(
 			await sendRangeRequest(
 				preparing,
 				rangeControlRequest(preparing, "cancel-preparing", preparingOperation, "cancel"),
 			),
-		).toMatchObject({ status: "cancelled" });
-		expect(modelSignal?.aborted).toBe(true);
-		expect(await prepareResult).toMatchObject({ status: "cancelled" });
+			{ status: "cancelled" },
+		);
+		assert.equal(modelSignal?.aborted, true);
+		assert.partialDeepStrictEqual(await prepareResult, { status: "cancelled" });
 
 		const prepared = world();
 		const preparedSeed = seedRange(prepared);
@@ -853,12 +862,14 @@ describe("range compression protocol", () => {
 			prepared,
 			rangePrepareRequest(prepared, preparedSeed, "cancel-prepared-prepare", preparedOperation),
 		);
-		expect(
+		assert.partialDeepStrictEqual(
 			await sendRangeRequest(prepared, rangeControlRequest(prepared, "cancel-prepared", preparedOperation, "cancel")),
-		).toMatchObject({ status: "cancelled" });
-		expect(
+			{ status: "cancelled" },
+		);
+		assert.partialDeepStrictEqual(
 			await sendRangeRequest(prepared, rangeControlRequest(prepared, "cancelled-status", preparedOperation, "status")),
-		).toMatchObject({ status: "cancelled" });
+			{ status: "cancelled" },
+		);
 	});
 
 	it("keeps apply non-interruptible and reports session changes", async () => {
@@ -881,15 +892,16 @@ describe("range compression protocol", () => {
 		};
 		const applying = sendRangeRequest(value, rangeControlRequest(value, "applying-apply", operationId, "apply"));
 		await enteredNavigation.promise;
-		expect(
+		assert.partialDeepStrictEqual(
 			await sendRangeRequest(value, rangeControlRequest(value, "applying-cancel", operationId, "cancel")),
-		).toMatchObject({ status: "failed", code: "busy" });
+			{ status: "failed", code: "busy" },
+		);
 		releaseNavigation.resolve(undefined);
-		expect(await applying).toMatchObject({ status: "applied" });
+		assert.partialDeepStrictEqual(await applying, { status: "applied" });
 
 		const wrongSession = rangeControlRequest(value, "wrong-session", "wrong-session-operation", "status");
 		wrongSession.sessionId = "different-session";
-		expect(await sendRangeRequest(value, wrongSession)).toMatchObject({
+		assert.partialDeepStrictEqual(await sendRangeRequest(value, wrongSession), {
 			status: "failed",
 			code: "session_changed",
 		});
@@ -904,7 +916,7 @@ describe("batch compression persistence", () => {
 		const markerId = value.session.manager.appendCustomEntry(LEGACY_COMPRESSION_ENTRY, details);
 		const marker = value.session.manager.getEntry(markerId);
 		if (!marker) throw new Error("legacy marker fixture is invalid");
-		expect(compressionDetails(marker)).toEqual(details);
+		assert.deepEqual(compressionDetails(marker), details);
 	});
 });
 
@@ -914,18 +926,20 @@ describe("branch and merge contracts", () => {
 		value.session.user("root");
 		value.session.assistant("plan");
 		await branchHandler(value.pi, value.ctx, "feature cheap-model");
-		expect(durableSequence(value.session.manager)).toEqual([CTREE_FORK]);
-		expect(value.modelsSet).toEqual(["openai/cheap-model"]);
+		assert.deepEqual(durableSequence(value.session.manager), [CTREE_FORK]);
+		assert.deepEqual(value.modelsSet, ["openai/cheap-model"]);
 		const fork = value.session.manager.getEntries().find((entry) => entry.type === "custom");
-		expect(fork && value.session.manager.getLabel(fork.id)).toBe("feature");
+		assert.equal(fork && value.session.manager.getLabel(fork.id), "feature");
 	});
 
-	it.each(["bad name", "feature unknown-model"])("rejects invalid branch input %s", async (input) => {
-		const value = world();
-		value.session.user("root");
-		await branchHandler(value.pi, value.ctx, input);
-		expect(durableSequence(value.session.manager)).toEqual([]);
-	});
+	for (const input of ["bad name", "feature unknown-model"]) {
+		it(`rejects invalid branch input ${input}`, async () => {
+			const value = world();
+			value.session.user("root");
+			await branchHandler(value.pi, value.ctx, input);
+			assert.deepEqual(durableSequence(value.session.manager), []);
+		});
+	}
 
 	it("rejects duplicate open names and keeps completion data as strings", async () => {
 		const value = world();
@@ -933,37 +947,39 @@ describe("branch and merge contracts", () => {
 		value.session.assistant("plan");
 		registerBranch(value.pi);
 		for (const handler of value.handlers.get("session_start") ?? []) handler({}, value.ctx);
-		expect(modelCompletions("feature cheap")).toEqual([{ value: "openai/cheap-model", label: "openai/cheap-model" }]);
+		assert.deepEqual(modelCompletions("feature cheap"), [{ value: "openai/cheap-model", label: "openai/cheap-model" }]);
 		await branchHandler(value.pi, value.ctx, "feature");
 		await branchHandler(value.pi, value.ctx, "feature");
-		expect(durableSequence(value.session.manager)).toEqual([CTREE_FORK]);
+		assert.deepEqual(durableSequence(value.session.manager), [CTREE_FORK]);
 	});
 
-	it.each(["--squash", "--no-llm"])("keeps the %s decision-before-close sequence", async (mode) => {
-		const value = world();
-		const forkId = await seedBranch(value);
-		value.ui.editorQueue.push("__PREFILL__");
-		await mergeHandler(value.pi, value.ctx, mode, draft);
-		expect(durableSequence(value.session.manager)).toEqual([CTREE_FORK, CTREE_DECISION, CTREE_CLOSE]);
-		expect(value.navigations).toContainEqual({ entryId: forkId, summarize: false });
-		expect(value.modelsSet.at(-1)).toBe("openai/test-model");
-	});
+	for (const mode of ["--squash", "--no-llm"]) {
+		it(`keeps the ${mode} decision-before-close sequence`, async () => {
+			const value = world();
+			const forkId = await seedBranch(value);
+			value.ui.editorQueue.push("__PREFILL__");
+			await mergeHandler(value.pi, value.ctx, mode, draft);
+			assert.deepEqual(durableSequence(value.session.manager), [CTREE_FORK, CTREE_DECISION, CTREE_CLOSE]);
+			assert.ok(value.navigations.some((navigation) => navigation.entryId === forkId && !navigation.summarize));
+			assert.equal(value.modelsSet.at(-1), "openai/test-model");
+		});
+	}
 
 	it("writes nothing when the mandatory decision editor is cancelled", async () => {
 		const value = world();
 		await seedBranch(value);
 		value.ui.editorQueue.push(undefined);
 		await mergeHandler(value.pi, value.ctx, "--squash", draft);
-		expect(durableSequence(value.session.manager)).toEqual([CTREE_FORK]);
-		expect(value.navigations).toHaveLength(0);
+		assert.deepEqual(durableSequence(value.session.manager), [CTREE_FORK]);
+		assert.equal(value.navigations.length, 0);
 	});
 
 	it("keeps the inline discard sequence", async () => {
 		const value = world();
 		const forkId = await seedBranch(value);
 		await mergeHandler(value.pi, value.ctx, "--discard rejected", draft);
-		expect(durableSequence(value.session.manager)).toEqual([CTREE_FORK, CTREE_CLOSE]);
-		expect(value.navigations).toContainEqual({ entryId: forkId, summarize: false });
+		assert.deepEqual(durableSequence(value.session.manager), [CTREE_FORK, CTREE_CLOSE]);
+		assert.ok(value.navigations.some((navigation) => navigation.entryId === forkId && !navigation.summarize));
 	});
 
 	it("keeps the inline tournament sequence and sibling epitaph closures", async () => {
@@ -978,7 +994,7 @@ describe("branch and merge contracts", () => {
 		}
 		value.ui.editorQueue.push("__PREFILL__");
 		await mergeHandler(value.pi, value.ctx, "--tournament", draft);
-		expect(durableSequence(value.session.manager)).toEqual([
+		assert.deepEqual(durableSequence(value.session.manager), [
 			CTREE_FORK,
 			CTREE_FORK,
 			CTREE_FORK,
@@ -1007,21 +1023,22 @@ describe("crop command and inline recovery sequence", () => {
 		const { value, old } = cropWorld();
 		const plan = planCrop(snapshotSession(value.session.manager), [old.result]);
 		await applyCropPlan(value.pi, value.ctx, plan);
-		expect(durableSequence(value.session.manager)).toEqual([CTREE_CROP_TAIL, CTREE_CROP]);
-		expect(value.navigations[0]?.summarize).toBe(false);
+		assert.deepEqual(durableSequence(value.session.manager), [CTREE_CROP_TAIL, CTREE_CROP]);
+		assert.equal(value.navigations[0]?.summarize, false);
 	});
 
-	it.each([
+	for (const [args, dryRun] of [
 		["--top", false],
 		["--auto --apply --min-tokens 1 --older-than 0", false],
 		["--auto --apply --dry-run --min-tokens 1 --older-than 0", true],
-	] as const)("preserves headless mode %s", async (args, dryRun) => {
-		const { value } = cropWorld();
-		await cropHandler(value.pi, value.ctx, args);
-		const sequence = durableSequence(value.session.manager);
-		if (dryRun) expect(sequence).toEqual([]);
-		else expect(sequence).toEqual([CTREE_CROP_TAIL, CTREE_CROP]);
-	});
+	] as const) {
+		it(`preserves headless mode ${args}`, async () => {
+			const { value } = cropWorld();
+			await cropHandler(value.pi, value.ctx, args);
+			const sequence = durableSequence(value.session.manager);
+			assert.deepEqual(sequence, dryRun ? [] : [CTREE_CROP_TAIL, CTREE_CROP]);
+		});
+	}
 
 	it("requires a second mark before cropping the latest protected tool result", () => {
 		const value = world();
@@ -1039,69 +1056,71 @@ describe("crop command and inline recovery sequence", () => {
 			maxBody: 12,
 		});
 		panel.handleInput(" ");
-		expect(panel.controller.marks.has(result.result)).toBe(false);
-		expect(notices.at(-1)).toContain("space again");
+		assert.equal(panel.controller.marks.has(result.result), false);
+		assert.ok(notices.at(-1)?.includes("space again"));
 		panel.handleInput(" ");
-		expect(panel.controller.marks.has(result.result)).toBe(true);
+		assert.equal(panel.controller.marks.has(result.result), true);
 		panel.handleInput("\r");
-		expect(actions).toHaveLength(1);
-		expect(actions[0]).toMatchObject({ type: "crop-apply" });
+		assert.equal(actions.length, 1);
+		assert.partialDeepStrictEqual(actions[0], { type: "crop-apply" });
 	});
 });
 
 describe("append-only undo", () => {
-	it.each(["branch", "crop", "range", "batch"])("restores the %s source target without deletion", async (kind) => {
-		const value = world();
-		value.session.user("root");
-		const target = value.session.assistant("target");
-		if (kind === "branch") {
-			value.session.manager.appendCustomEntry(CTREE_FORK, {
-				v: 1,
-				name: "branch",
-				parentEntryId: target,
-				createdAt: 1,
-				status: "open",
-			});
-		} else if (kind === "crop") {
-			value.session.manager.appendCustomEntry(CTREE_CROP, { v: 1, sourceLeafId: target, stubbed: [] });
-		} else if (kind === "range") {
-			value.session.manager.appendCustomEntry(CTREE_RANGE_COMPACT, {
-				v: 1,
-				sourceLeafId: target,
-				anchorId: "root",
-				startEntryId: "start",
-				endEntryId: "end",
-				selectedEntryIds: ["start"],
-				selectedEstTokens: 10,
-				summaryEstTokens: 2,
-				reclaimedEstTokens: 8,
-				summaryModel: "openai/test-model",
-				sourceSha8: "12345678",
-			});
-		} else {
-			value.session.manager.appendCustomEntry(COMPRESSION_ENTRY, {
-				v: 2,
-				runId: "run",
-				planId: HASH,
-				batchId: HASH,
-				operationId: "operation",
-				structuralRevision: HASH,
-				fileRevision: HASH,
-				preCompletionBitmap: [],
-				sourceLeafId: target,
-				preTaskAnchorId: "anchor",
-				taskMessageEntryId: "task",
-				startEntryId: "start",
-				endEntryId: "end",
-				selectedEntryIds: ["start"],
-				sourceSha256: HASH,
-			});
-		}
-		const count = value.session.manager.getEntries().length;
-		await undoHandler(value.pi, value.ctx);
-		expect(value.navigations.at(-1)?.entryId).toBe(target);
-		expect(value.session.manager.getEntries()).toHaveLength(count);
-	});
+	for (const kind of ["branch", "crop", "range", "batch"]) {
+		it(`restores the ${kind} source target without deletion`, async () => {
+			const value = world();
+			value.session.user("root");
+			const target = value.session.assistant("target");
+			if (kind === "branch") {
+				value.session.manager.appendCustomEntry(CTREE_FORK, {
+					v: 1,
+					name: "branch",
+					parentEntryId: target,
+					createdAt: 1,
+					status: "open",
+				});
+			} else if (kind === "crop") {
+				value.session.manager.appendCustomEntry(CTREE_CROP, { v: 1, sourceLeafId: target, stubbed: [] });
+			} else if (kind === "range") {
+				value.session.manager.appendCustomEntry(CTREE_RANGE_COMPACT, {
+					v: 1,
+					sourceLeafId: target,
+					anchorId: "root",
+					startEntryId: "start",
+					endEntryId: "end",
+					selectedEntryIds: ["start"],
+					selectedEstTokens: 10,
+					summaryEstTokens: 2,
+					reclaimedEstTokens: 8,
+					summaryModel: "openai/test-model",
+					sourceSha8: "12345678",
+				});
+			} else {
+				value.session.manager.appendCustomEntry(COMPRESSION_ENTRY, {
+					v: 2,
+					runId: "run",
+					planId: HASH,
+					batchId: HASH,
+					operationId: "operation",
+					structuralRevision: HASH,
+					fileRevision: HASH,
+					preCompletionBitmap: [],
+					sourceLeafId: target,
+					preTaskAnchorId: "anchor",
+					taskMessageEntryId: "task",
+					startEntryId: "start",
+					endEntryId: "end",
+					selectedEntryIds: ["start"],
+					sourceSha256: HASH,
+				});
+			}
+			const count = value.session.manager.getEntries().length;
+			await undoHandler(value.pi, value.ctx);
+			assert.equal(value.navigations.at(-1)?.entryId, target);
+			assert.equal(value.session.manager.getEntries().length, count);
+		});
+	}
 });
 
 describe("decision text", () => {
@@ -1114,8 +1133,8 @@ describe("decision text", () => {
 			outcome: "ship it",
 			why: ["safe", "small"],
 		});
-		expect(record).toContain("**Assumptions:** —");
-		expect(exportDecisionsMarkdown([record], "project")).toContain("# Decision records — project");
+		assert.ok(record.includes("**Assumptions:** —"));
+		assert.ok(exportDecisionsMarkdown([record], "project").includes("# Decision records — project"));
 	});
 });
 
@@ -1131,15 +1150,15 @@ describe("ambient and panel behavior", () => {
 		const customResults: unknown[] = [seed.startId, seed.endId, { status: "prepared", prepared }];
 		interactive.ui.custom = async <T>() => customResults.shift() as T;
 		await rangeCompressHandler(interactive.pi, interactive.ctx, "");
-		expect(durableSequence(interactive.session.manager)).toEqual([]);
-		expect(interactive.ui.notifications.at(-1)?.message).toContain("cancelled during summary review");
+		assert.deepEqual(durableSequence(interactive.session.manager), []);
+		assert.ok(interactive.ui.notifications.at(-1)?.message.includes("cancelled during summary review"));
 
 		const headless = world();
 		seedRange(headless);
 		(headless.ctx as unknown as { mode: string }).mode = "print";
 		await rangeCompressHandler(headless.pi, headless.ctx, "");
-		expect(headless.ui.notifications.at(-1)?.message).toContain("interactive TUI");
-		expect(durableSequence(headless.session.manager)).toEqual([]);
+		assert.ok(headless.ui.notifications.at(-1)?.message.includes("interactive TUI"));
+		assert.deepEqual(durableSequence(headless.session.manager), []);
 	});
 
 	it("dispatches the actionable /panel command from Ctrl+Q without opening UI directly", async () => {
@@ -1152,34 +1171,41 @@ describe("ambient and panel behavior", () => {
 		};
 		registerPanel(value.pi, draft);
 		await value.shortcuts.get("ctrl+q")?.(value.ctx);
-		expect(value.sentUserMessages).toEqual([{ content: "/panel", options: { expandPromptTemplates: true } }]);
-		expect(optionsSeen).toEqual([]);
+		assert.deepEqual(value.sentUserMessages, [{ content: "/panel", options: { expandPromptTemplates: true } }]);
+		assert.deepEqual(optionsSeen, []);
 		await value.commands.get("panel")?.("", value.ctx);
-		expect(optionsSeen).toEqual([{ overlay: true, overlayOptions: { anchor: "center", width: "100%" } }]);
+		assert.deepEqual(optionsSeen, [{ overlay: true, overlayOptions: { anchor: "center", width: "100%" } }]);
 	});
 
 	it("keeps status, title, gauge, trend, red warning, and compact warning", () => {
 		const value = world();
 		value.session.user("root");
 		refreshAmbient(value.ctx);
-		expect(value.ui.statuses.get("ctree")).toBe("⎇ trunk · ctx 15.0% filling");
-		expect(value.ui.widgets.get("ctree-gauge")?.[0]).toContain("15.0% filling");
+		assert.equal(value.ui.statuses.get("ctree"), "⎇ trunk · ctx 15.0% filling");
+		assert.ok(value.ui.widgets.get("ctree-gauge")?.[0]?.includes("15.0% filling"));
 		(value.ctx as unknown as { getContextUsage: () => unknown }).getContextUsage = () => ({
 			tokens: 82_000,
 			contextWindow: 200_000,
 			percent: 41,
 		});
 		refreshAmbient(value.ctx);
-		expect(value.ui.statuses.get("ctree")).toContain("▲ +26%");
-		expect(value.ui.notifications.some((item) => item.message.includes("/compress"))).toBe(true);
+		assert.ok(value.ui.statuses.get("ctree")?.includes("▲ +26%"));
+		assert.equal(
+			value.ui.notifications.some((item) => item.message.includes("/compress")),
+			true,
+		);
 		const redWarnings = value.ui.notifications.filter((item) => item.message.includes("context crossed")).length;
 		registerAmbient(value.pi);
 		for (const handler of value.handlers.get("session_start") ?? []) handler({}, value.ctx);
-		expect(value.ui.notifications.filter((item) => item.message.includes("context crossed"))).toHaveLength(
+		assert.equal(
+			value.ui.notifications.filter((item) => item.message.includes("context crossed")).length,
 			redWarnings + 1,
 		);
 		for (const handler of value.handlers.get("session_before_compact") ?? []) handler({}, value.ctx);
-		expect(value.ui.notifications.some((item) => item.message.includes("/compact"))).toBe(true);
+		assert.equal(
+			value.ui.notifications.some((item) => item.message.includes("/compact")),
+			true,
+		);
 	});
 
 	it("stays safe in print mode without creating a themed widget", () => {
@@ -1187,7 +1213,7 @@ describe("ambient and panel behavior", () => {
 		(value.ctx as unknown as { mode: string }).mode = "print";
 		value.session.user("root");
 		refreshAmbient(value.ctx);
-		expect(value.ui.widgets.size).toBe(0);
+		assert.equal(value.ui.widgets.size, 0);
 	});
 
 	it("uses native panel components for one width and input smoke", () => {
@@ -1206,30 +1232,30 @@ describe("ambient and panel behavior", () => {
 			maxBody: 12,
 		});
 		for (const width of [60, 100]) {
-			for (const line of panel.render(width)) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+			for (const line of panel.render(width)) assert.ok(visibleWidth(line) <= width);
 		}
-		expect(panel.opts.input.sessionName).toBe("panel session");
-		expect(panel.controller.view).toBe("tree");
+		assert.equal(panel.opts.input.sessionName, "panel session");
+		assert.equal(panel.controller.view, "tree");
 		panel.handleInput("c");
-		expect(panel.controller.view).toBe("crop");
+		assert.equal(panel.controller.view, "crop");
 		panel.handleInput("t");
-		expect(panel.controller.cropMode).toBe("turn");
+		assert.equal(panel.controller.cropMode, "turn");
 		panel.handleInput("\x1b");
 		panel.handleInput("u");
-		expect(panel.controller.view).toBe("consumers");
+		assert.equal(panel.controller.view, "consumers");
 		panel.handleInput("\x1b");
 		panel.handleInput("D");
-		expect(panel.controller.view).toBe("decisions");
+		assert.equal(panel.controller.view, "decisions");
 		panel.handleInput("\x1b");
 		panel.handleInput("i");
-		expect(panel.controller.view).toBe("inspect");
+		assert.equal(panel.controller.view, "inspect");
 		panel.handleInput("\x1b");
 		panel.controller.cropMode = "result";
 		panel.handleInput("c");
 		panel.handleInput(" ");
 		panel.handleInput(" ");
 		panel.handleInput("\r");
-		expect(actions).toHaveLength(1);
+		assert.equal(actions.length, 1);
 	});
 
 	it("keeps panel command, shortcut, and no-UI decisions", async () => {
@@ -1238,8 +1264,8 @@ describe("ambient and panel behavior", () => {
 		registerPanel(value.pi, draft);
 		(value.ctx as unknown as { mode: string }).mode = "print";
 		await value.commands.get("decisions")?.("", value.ctx);
-		expect(value.ui.notifications.at(-1)?.message).toContain("no decision records");
-		expect(value.shortcuts.has("ctrl+q")).toBe(true);
+		assert.ok(value.ui.notifications.at(-1)?.message.includes("no decision records"));
+		assert.equal(value.shortcuts.has("ctrl+q"), true);
 	});
 });
 
@@ -1254,7 +1280,7 @@ function piPath(): string | null {
 const PI = piPath();
 const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "index.ts");
 
-describe.skipIf(!PI)("RPC integration", () => {
+describe("RPC integration", { skip: !PI }, () => {
 	it("loads the source extension and returns all fixed commands", { timeout: 30_000 }, async () => {
 		const cwd = mkdtempSync(join(tmpdir(), "pi-compress-rpc-"));
 		const agentDir = mkdtempSync(join(tmpdir(), "pi-compress-agent-"));
@@ -1289,8 +1315,8 @@ describe.skipIf(!PI)("RPC integration", () => {
 			});
 			setTimeout(() => child.stdin.write(`${JSON.stringify({ type: "get_commands" })}\n`), 1_500);
 		}).finally(() => child.kill());
-		expect(commands).toEqual(
-			expect.arrayContaining(["branch", "merge", "crop", "compress", "panel", "decisions", "undo"]),
+		assert.ok(
+			["branch", "merge", "crop", "compress", "panel", "decisions", "undo"].every((name) => commands.includes(name)),
 		);
 	});
 });

@@ -511,8 +511,11 @@ function isCompressionContext(value: unknown): value is ExtensionCommandContext 
 
 class CompressionOperationCoordinator {
 	private readonly operations = new Map<string, CompressionOperationState>();
+	private readonly pi: ExtensionAPI;
 
-	constructor(private readonly pi: ExtensionAPI) {}
+	constructor(pi: ExtensionAPI) {
+		this.pi = pi;
+	}
 
 	clearSession(sessionId: string): void {
 		for (const [key, state] of this.operations) {
