@@ -928,7 +928,7 @@ describe("batch compression", () => {
 		const session = new MemorySession();
 		session.user("root");
 		const anchor = session.assistant("batch anchor");
-		const task = session.user("[Queued task]\n\nRun the batch");
+		const task = session.user("Run the batch");
 		const settled = session.assistant("batch completed");
 		return { session, anchor, task, settled };
 	}
@@ -941,7 +941,7 @@ describe("batch compression", () => {
 		bitmap: [false, true],
 	};
 
-	it("reuses range safety and appends queued task, summary, then marker", async () => {
+	it("reuses range safety and appends the task, summary, then marker", async () => {
 		const world = batchSession();
 		const ctx = extensionContext(world.session.manager);
 		const plan = prepareCompression(ctx, world.anchor, world.settled, "operation");

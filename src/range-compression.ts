@@ -367,12 +367,8 @@ export async function compressRange(
 	return details ? { status: "applied", details } : { status: "cancelled" };
 }
 
-function isQueuedTaskMessage(entry: SessionEntry): entry is SessionMessageEntry {
-	return (
-		entry.type === "message" &&
-		entry.message.role === "user" &&
-		contentText(entry.message.content, "\n").startsWith("[Queued task]\n\n")
-	);
+function isTaskMessage(entry: SessionEntry): entry is SessionMessageEntry {
+	return entry.type === "message" && entry.message.role === "user";
 }
 
 export function prepareCompression(
@@ -389,9 +385,9 @@ export function prepareCompression(
 		throw new Error("The completed batch session range is not available.");
 	}
 	const taskMessageIndex = entries.findIndex(
-		(entry, index) => index > markerIndex && index <= endIndex && isQueuedTaskMessage(entry),
+		(entry, index) => index > markerIndex && index <= endIndex && isTaskMessage(entry),
 	);
-	if (taskMessageIndex === -1) throw new Error("The queued batch message is not available.");
+	if (taskMessageIndex === -1) throw new Error("The task message is not available.");
 	const startIndex = entries.findIndex(
 		(entry, index) =>
 			index > taskMessageIndex && index <= endIndex && entry.type === "message" && entry.message.role === "assistant",
@@ -404,8 +400,8 @@ export function prepareCompression(
 	if (!endpoint || !startEntry) throw new Error("The execution range is not available.");
 	const rewrite = prepareRewrite(snapshot, startEntry.id, endpoint.endEntryId, { anchorId: batchStartEntryId });
 	const taskMessageEntry = entries[taskMessageIndex];
-	if (!taskMessageEntry || !isQueuedTaskMessage(taskMessageEntry) || taskMessageEntry.message.role !== "user") {
-		throw new Error("The queued batch message is invalid.");
+	if (!taskMessageEntry || !isTaskMessage(taskMessageEntry) || taskMessageEntry.message.role !== "user") {
+		throw new Error("The task message is invalid.");
 	}
 	return {
 		...rewrite,
