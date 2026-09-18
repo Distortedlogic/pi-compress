@@ -5,5 +5,4 @@ pi-preload:
     - "package.json"
     - "tsconfig.json"
     - "src/**/*.ts"
-  excludes:
-    - "tests/**/*"
+    - "tests/**/*.ts"
