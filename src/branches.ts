@@ -23,7 +23,7 @@ import {
 	ctreeRangeCompactData,
 } from "./protocol.ts";
 
-export interface DecisionDraft {
+interface DecisionDraft {
 	branchName: string;
 	dateIso: string;
 	model: string;
@@ -74,11 +74,7 @@ function rememberModels(ctx: ExtensionContext): void {
 	modelReferences = ctx.modelRegistry.getAll().map((model) => `${model.provider}/${model.id}`);
 }
 
-export function resetModelCompletions(): void {
-	modelReferences = [];
-}
-
-export function modelCompletions(argumentPrefix: string): { value: string; label: string }[] | null {
+function modelCompletions(argumentPrefix: string): { value: string; label: string }[] | null {
 	const parts = argumentPrefix.split(/\s+/);
 	if (parts.length < 2) return null;
 	const prefix = (parts.at(-1) ?? "").toLowerCase();
@@ -89,7 +85,7 @@ export function modelCompletions(argumentPrefix: string): { value: string; label
 	return matches.length > 0 ? matches.map((value) => ({ value, label: value })) : null;
 }
 
-export function renderDecisionRecord(draft: DecisionDraft): string {
+function renderDecisionRecord(draft: DecisionDraft): string {
 	const lines: string[] = [
 		`## Decision: ${draft.branchName}`,
 		`**Date:** ${draft.dateIso} · **Model:** ${draft.model} · **Branch:** ${draft.branchId}`,
@@ -109,7 +105,7 @@ export function renderDecisionRecord(draft: DecisionDraft): string {
 	return `${lines.join("\n")}\n`;
 }
 
-export function exportDecisionsMarkdown(records: readonly string[], project?: string): string {
+function exportDecisionsMarkdown(records: readonly string[], project?: string): string {
 	const title = `# Decision records${project ? ` — ${project}` : ""}`;
 	const meta = `_${records.length} record${records.length === 1 ? "" : "s"} · exported by pi-compress_`;
 	if (records.length === 0) {

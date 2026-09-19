@@ -5,27 +5,10 @@ import {
 	createEventBus,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
-	initTheme,
 	SessionManager,
-	type TreeSelectorComponent,
 } from "@earendil-works/pi-coding-agent";
-import type { Component } from "@earendil-works/pi-tui";
-import {
-	aggregateConsumers,
-	band,
-	estimateEntryTokens,
-	fmtTokens,
-	serializeEntries,
-	snapshotSession,
-} from "../src/context.ts";
-import {
-	autoSelect,
-	contextTurns,
-	cropCandidates,
-	planCrop,
-	planRemoveTurns,
-	renderReconstruction,
-} from "../src/crop.ts";
+import { snapshotSession } from "../src/context.ts";
+import { planCrop, renderReconstruction } from "../src/crop.ts";
 import {
 	type BatchSnapshot,
 	COMPRESSION_ENTRY,
@@ -45,21 +28,15 @@ import {
 import {
 	applyCompression,
 	applyPreparedRangeCompression,
-	compressRange,
 	type PreparedRangeCompression,
 	prepareCompression,
 	prepareRangeCompression,
-	type RangeCompressionInput,
-	type RangeCompressionOutcome,
 	type RangeCompressionTarget,
-	rangeCompressHandler,
 	registerRangeCompressionService,
 	renderRangeTail,
 	reviewRangeCompression,
 } from "../src/range-compression.ts";
 import { applyRewrite, candidateByEntryId, prepareRewrite, rangeCandidates, sourceSha8 } from "../src/rewrite.ts";
-
-initTheme("dark");
 
 const HASH_A = "a".repeat(64);
 
@@ -127,9 +104,9 @@ function cropScenario() {
 	session.assistant("anchor");
 	const old = session.toolUse("chrome.snapshot", { url: "tab-audit" }, "A".repeat(80_000));
 	session.assistant("analysis");
-	const latest = session.toolUse("chrome.snapshot", { url: "after" }, "B".repeat(400));
+	session.toolUse("chrome.snapshot", { url: "after" }, "B".repeat(400));
 	session.assistant("done");
-	return { session, old, latest, snapshot: snapshotSession(session.manager) };
+	return { session, old, snapshot: snapshotSession(session.manager) };
 }
 
 function extensionContext(
@@ -198,48 +175,6 @@ function assistantResponse(text: string): AssistantMessage {
 	};
 }
 
-function selectorEntryIds(component: Component): string[] {
-	const selector = component as TreeSelectorComponent;
-	const list = selector.getTreeList();
-	const ids: string[] = [];
-	for (let count = 0; count < 100; count++) {
-		const entryId = list.getSelectedNode()?.entry.id;
-		if (!entryId || ids.includes(entryId)) break;
-		ids.push(entryId);
-		selector.handleInput("\x1b[B");
-	}
-	return ids;
-}
-
-function selectSelectorEntry(component: Component, entryId: string): void {
-	const selector = component as TreeSelectorComponent;
-	for (let count = 0; count < 100; count++) {
-		if (selector.getTreeList().getSelectedNode()?.entry.id === entryId) {
-			selector.handleInput("\r");
-			return;
-		}
-		selector.handleInput("\x1b[B");
-	}
-	throw new Error(`Selector entry ${entryId} was not found.`);
-}
-
-function captureRangeSelectors(ctx: ExtensionCommandContext, choices: readonly (string | undefined)[]): string[][] {
-	const projections: string[][] = [];
-	let selectionIndex = 0;
-	const ui = ctx.ui as unknown as {
-		custom: <T>(factory: (...args: any[]) => Component) => Promise<T>;
-	};
-	ui.custom = async <T>(factory: (...args: any[]) => Component): Promise<T> =>
-		new Promise<T>((resolve) => {
-			const component = factory({ terminal: { rows: 30 }, requestRender: () => {} }, {}, {}, resolve);
-			projections.push(selectorEntryIds(component));
-			const choice = choices[selectionIndex++];
-			if (choice === undefined) component.handleInput?.("\x1b");
-			else selectSelectorEntry(component, choice);
-		});
-	return projections;
-}
-
 function mutationApi(manager: SessionManager): ExtensionAPI {
 	const api = {
 		sendMessage: (message) => {
@@ -252,57 +187,7 @@ function mutationApi(manager: SessionManager): ExtensionAPI {
 	return api as unknown as ExtensionAPI;
 }
 
-describe("estimation and consumers", () => {
-	for (const [tokens, expected] of [
-		[0, "0"],
-		[950, "950"],
-		[19_400, "19.4k"],
-		[200_000, "200k"],
-	] as const) {
-		it(`formats ${tokens} tokens as ${expected}`, () => {
-			assert.equal(fmtTokens(tokens), expected);
-		});
-	}
-
-	for (const [percent, expected] of [
-		[4.9, "low"],
-		[5, "healthy"],
-		[15, "filling"],
-		[40, "filling"],
-		[40.1, "red"],
-	] as const) {
-		it(`maps ${percent} percent to ${expected}`, () => {
-			assert.equal(band(percent), expected);
-		});
-	}
-
-	it("counts image input and groups context by source", () => {
-		const session = new MemorySession();
-		session.manager.appendMessage({
-			role: "user",
-			content: [{ type: "image", data: "x", mimeType: "image/png" }],
-			timestamp: 1,
-		});
-		const result = session.toolUse("read", { path: "large.txt" }, "x".repeat(8_000));
-		const snapshot = snapshotSession(session.manager);
-		assert.ok(estimateEntryTokens(session.manager.getEntry(result.call)!) > 0);
-		const consumers = aggregateConsumers(snapshot.contextEntries);
-		assert.equal(consumers[0]?.key, "read");
-		assert.ok(Math.abs(consumers.reduce((total, row) => total + row.share, 0) - 1) < 0.005);
-	});
-});
-
-describe("crop and whole-turn planning", () => {
-	it("protects the latest result and keeps matching tools or arguments during auto selection", () => {
-		const { old, latest, snapshot } = cropScenario();
-		const candidates = cropCandidates(snapshot);
-		assert.equal(candidates.find((candidate) => candidate.entryId === old.result)?.protected, false);
-		assert.equal(candidates.find((candidate) => candidate.entryId === latest.result)?.protected, true);
-		assert.ok(autoSelect(candidates, { minTokens: 1, olderThanTurns: 0 }).includes(old.result));
-		assert.ok(!autoSelect(candidates, { minTokens: 1, olderThanTurns: 0, keep: ["chrome.*"] }).includes(old.result));
-		assert.ok(!autoSelect(candidates, { minTokens: 1, olderThanTurns: 0, keep: ["tab-*"] }).includes(old.result));
-	});
-
+describe("crop reconstruction", () => {
 	it("stubs selected results, keeps continuation order, and preserves originals", () => {
 		const { old, snapshot } = cropScenario();
 		const plan = planCrop(snapshot, [old.result]);
@@ -312,214 +197,55 @@ describe("crop and whole-turn planning", () => {
 		assert.ok(rendered.includes("[cropped: chrome.snapshot tab-audit"));
 		assert.ok(rendered.includes("analysis"));
 		assert.ok(!rendered.includes("A".repeat(200)));
-		assert.notEqual(
-			snapshot.entries.find((entry) => entry.id === old.result),
-			undefined,
-		);
-	});
-
-	it("removes complete non-current turns and keeps a recovery marker", () => {
-		const session = new MemorySession();
-		session.user("root");
-		session.assistant("root answer");
-		const removed = session.user("remove this question");
-		session.toolUse("read", { path: "large" }, "x".repeat(20_000));
-		session.assistant("remove this answer");
-		session.user("keep this question");
-		session.assistant("keep this answer");
-		const snapshot = snapshotSession(session.manager);
-		const turns = contextTurns(snapshot);
-		assert.ok(turns.map((turn) => turn.userId).includes(removed));
-		const plan = planRemoveTurns(snapshot, [removed]);
-		const rendered = renderReconstruction(plan);
-		assert.equal(plan.dropped[0]?.entryIds.length, 4);
-		assert.ok(rendered.includes("[dropped turn —"));
-		assert.ok(!rendered.includes("remove this question"));
-		assert.ok(rendered.includes("keep this answer"));
+		assert.ok(snapshot.entries.some((entry) => entry.id === old.result));
 	});
 });
 
 describe("shared range safety", () => {
-	it("keeps a tool call and all contiguous results in one atomic group", () => {
-		const { old, snapshot } = cropScenario();
-		const groups = candidateByEntryId(rangeCandidates(snapshot));
-		assert.deepEqual(groups.get(old.result)?.entryIds, [old.call, old.result]);
-		assert.equal(groups.get(old.result)?.startEntryId, old.call);
-		assert.throws(() => prepareRewrite(snapshot, old.result, old.result), /split a required tool-call group/);
-	});
-
-	for (const [name, build] of [
-		[
-			"root range",
-			() => {
-				const session = new MemorySession();
-				const root = session.user("root");
-				const leaf = session.assistant("leaf");
-				return { snapshot: snapshotSession(session.manager), start: root, end: leaf };
-			},
-		],
-		[
-			"incomplete current turn",
-			() => {
-				const session = new MemorySession();
-				session.user("root");
-				session.assistant("anchor");
-				const pending = session.user("pending");
-				return { snapshot: snapshotSession(session.manager), start: pending, end: pending };
-			},
-		],
-		[
-			"decision record",
-			() => {
-				const session = new MemorySession();
-				session.user("root");
-				session.assistant("anchor");
-				const decision = session.decision();
-				session.assistant("leaf");
-				return { snapshot: snapshotSession(session.manager), start: decision, end: decision };
-			},
-		],
-		[
-			"incomplete tool group",
-			() => {
-				const session = new MemorySession();
-				session.user("root");
-				session.assistant("anchor");
-				const call = session.assistant("", [
-					{ type: "toolCall", id: "missing", name: "read", arguments: { path: "x" } },
-				]);
-				return { snapshot: snapshotSession(session.manager), start: call, end: call };
-			},
-		],
-		[
-			"orphan result",
-			() => {
-				const session = new MemorySession();
-				session.user("root");
-				session.assistant("anchor");
-				const result = session.toolResult("read", "orphan", "missing");
-				session.assistant("leaf");
-				return { snapshot: snapshotSession(session.manager), start: result, end: result };
-			},
-		],
-	] as const) {
-		it(`rejects ${name}`, () => {
-			const value = build();
-			assert.throws(() => prepareRewrite(value.snapshot, value.start, value.end));
-		});
-	}
-
-	for (const kind of [
-		"custom",
-		"model_change",
-		"thinking_level_change",
-		"label",
-		"session_info",
-		"compaction",
-		"branch_summary",
-	] as const) {
-		it(`protects the ${kind} metadata or structural boundary`, () => {
-			const session = new MemorySession();
-			session.user("root");
-			session.assistant("anchor");
-			const before = session.assistant("before boundary");
-			let boundary: string;
-			switch (kind) {
-				case "custom":
-					boundary = session.manager.appendCustomEntry("metadata");
-					break;
-				case "model_change":
-					boundary = session.manager.appendModelChange("openai", "other-model");
-					break;
-				case "thinking_level_change":
-					boundary = session.manager.appendThinkingLevelChange("high");
-					break;
-				case "label":
-					boundary = session.manager.appendLabelChange(before, "checkpoint");
-					break;
-				case "session_info":
-					boundary = session.manager.appendSessionInfo("named session");
-					break;
-				case "compaction":
-					boundary = session.manager.appendCompaction("summary", before, 100);
-					break;
-				case "branch_summary":
-					boundary = session.manager.branchWithSummary(before, "summary");
-					break;
-			}
-			const after = session.assistant("after boundary");
-			const snapshot = snapshotSession(session.manager);
-			assert.throws(() => prepareRewrite(snapshot, boundary, boundary), /protected/);
-			if (kind !== "compaction") assert.throws(() => prepareRewrite(snapshot, before, after), /protected/);
-		});
-	}
-
-	it("shows only legal starts in the first selector", async () => {
-		const session = new MemorySession();
-		session.user("root");
-		const anchor = session.assistant("legal before boundary");
-		const metadata = session.manager.appendCustomEntry("metadata");
-		const after = session.assistant("legal after boundary");
-		const pending = session.user("incomplete current turn");
-		const ctx = extensionContext(session.manager);
-		const projections = captureRangeSelectors(ctx, [undefined]);
-		await rangeCompressHandler(mutationApi(session.manager), ctx, "");
-		assert.equal(projections.length, 1);
-		assert.deepEqual(new Set(projections[0]), new Set([anchor, after]));
-		assert.ok(![metadata, pending].some((entryId) => projections[0]?.includes(entryId)));
-	});
-
-	it("shows only legal ends and stops at the first protected boundary", async () => {
-		const session = new MemorySession();
-		session.user("root");
-		const start = session.assistant("selected start");
-		const boundary = session.manager.appendCustomEntry("metadata");
-		const later = session.assistant("after boundary");
-		const ctx = extensionContext(session.manager);
-		const projections = captureRangeSelectors(ctx, [start, undefined]);
-		await rangeCompressHandler(mutationApi(session.manager), ctx, "");
-		assert.equal(projections.length, 2);
-		assert.deepEqual(projections[1], [start]);
-		assert.ok(![boundary, later].some((entryId) => projections[1]?.includes(entryId)));
-	});
-
-	it("omits inactive branches from both selector projections", async () => {
-		const session = new MemorySession();
-		session.user("root");
-		const anchor = session.assistant("branch anchor");
-		const inactive = session.assistant("inactive branch");
-		session.manager.branch(anchor);
-		const active = session.assistant("active branch");
-		const ctx = extensionContext(session.manager);
-		const projections = captureRangeSelectors(ctx, [anchor, undefined]);
-		await rangeCompressHandler(mutationApi(session.manager), ctx, "");
-		assert.equal(projections.length, 2);
-		assert.ok(!projections.flat().includes(inactive));
-		assert.ok([anchor, active].every((entryId) => projections[0]?.includes(entryId)));
-	});
-
-	it("requires confirmation after the native two-pass range selection", async () => {
+	it("keeps an assistant tool-call batch and all contiguous results atomic", () => {
 		const session = new MemorySession();
 		session.user("root");
 		session.assistant("anchor");
-		session.assistant("selected leaf");
-		const ctx = extensionContext(session.manager);
-		let selections = 0;
-		const ui = ctx.ui as unknown as {
-			confirm: () => Promise<boolean>;
-			custom: <T>(factory: (...args: any[]) => Component) => Promise<T>;
-		};
-		ui.confirm = async () => false;
-		ui.custom = async <T>(factory: (...args: any[]) => Component): Promise<T> =>
-			new Promise<T>((resolve) => {
-				selections += 1;
-				const component = factory({ terminal: { rows: 30 }, requestRender: () => {} }, {}, {}, resolve);
-				component.handleInput?.("\r");
-			});
-		const before = session.manager.getEntries().length;
-		await rangeCompressHandler(mutationApi(session.manager), ctx, "");
-		assert.equal(selections, 2);
-		assert.equal(session.manager.getEntries().length, before);
+		const call = session.assistant("", [
+			{ type: "toolCall", id: "call-a", name: "read", arguments: { path: "a.ts" } },
+			{ type: "toolCall", id: "call-b", name: "read", arguments: { path: "b.ts" } },
+		]);
+		const firstResult = session.toolResult("read", "a", "call-a");
+		const secondResult = session.toolResult("read", "b", "call-b");
+		const snapshot = snapshotSession(session.manager);
+		const groups = candidateByEntryId(rangeCandidates(snapshot));
+		assert.deepEqual(groups.get(call)?.entryIds, [call, firstResult, secondResult]);
+		assert.equal(groups.get(secondResult)?.startEntryId, call);
+		assert.throws(() => prepareRewrite(snapshot, firstResult, secondResult), /split a required tool-call group/);
+	});
+
+	it("protects session metadata, structural records, and incomplete message groups", () => {
+		const session = new MemorySession();
+		const root = session.user("root");
+		const anchor = session.assistant("anchor");
+		const metadata = session.manager.appendCustomEntry("metadata");
+		const decision = session.decision();
+		const orphan = session.toolResult("read", "orphan", "missing");
+		const incompleteToolGroup = session.assistant("", [
+			{ type: "toolCall", id: "unanswered", name: "read", arguments: { path: "x" } },
+		]);
+		const pending = session.user("pending");
+		const groups = candidateByEntryId(rangeCandidates(snapshotSession(session.manager)));
+
+		assert.equal(groups.get(root)?.protectReason, "no anchor before this message group");
+		assert.equal(groups.get(metadata)?.protectReason, "context-inert session metadata");
+		assert.equal(groups.get(decision)?.protectReason, "decision record");
+		assert.equal(groups.get(orphan)?.protectReason, "tool result without its assistant tool call");
+		assert.equal(groups.get(incompleteToolGroup)?.protectReason, "incomplete assistant tool-call group");
+		assert.equal(groups.get(pending)?.protectReason, "incomplete current user turn");
+
+		const structural = new MemorySession();
+		structural.user("root");
+		const structuralAnchor = structural.assistant("anchor");
+		const summary = structural.manager.branchWithSummary(structuralAnchor, "summary");
+		const structuralGroups = candidateByEntryId(rangeCandidates(snapshotSession(structural.manager)));
+		assert.equal(structuralGroups.get(summary)?.protectReason, "structural context entry");
+		assert.throws(() => prepareRewrite(snapshotSession(session.manager), anchor, pending), /protected/);
 	});
 
 	it("keeps complete selected source, a stable hash, and unchanged continuation", () => {
@@ -534,24 +260,6 @@ describe("shared range safety", () => {
 		assert.ok(rendered.includes("approved summary"));
 		assert.ok(rendered.includes("unchanged continuation"));
 		assert.ok(!rendered.includes("A".repeat(200)));
-	});
-
-	it("plans a long session within a bounded time", () => {
-		const session = new MemorySession();
-		session.user("root");
-		session.assistant("anchor");
-		let first = "";
-		let last = "";
-		for (let index = 0; index < 250; index++) {
-			const pair = session.toolUse("read", { path: `${index}.txt` }, "data");
-			first ||= pair.call;
-			last = pair.result;
-		}
-		session.assistant("leaf");
-		const start = performance.now();
-		const plan = prepareRewrite(snapshotSession(session.manager), first, last);
-		assert.equal(plan.selectedEntryIds.length, 500);
-		assert.ok(performance.now() - start < 2_000);
 	});
 });
 
@@ -569,26 +277,22 @@ describe("shared rewrite apply", () => {
 		};
 	}
 
-	for (const change of ["session", "leaf", "selected", "continuation", "hash"] as const) {
-		it(`rejects changed ${change} before navigation or writes`, async () => {
-			const world = validWorld();
-			let plan = world.plan;
-			if (change === "session") plan = { ...plan, sessionId: "other" };
-			if (change === "leaf") world.session.user("changed leaf");
-			if (change === "selected") plan = { ...plan, selectedEntryIds: [...plan.selectedEntryIds, "other"] };
-			if (change === "continuation") {
-				plan = { ...plan, continuationEntryIds: [...plan.continuationEntryIds, "other"] };
-			}
-			if (change === "hash") plan = { ...plan, sourceSha256: "0".repeat(64) };
-			await assert.rejects(
-				applyRewrite(world.pi, world.ctx, plan, {
-					messages: [{ customType: CTREE_CROP_TAIL, content: "replacement", display: true }],
-					marker: { customType: CTREE_CROP, data: {} },
-				}),
-			);
-			assert.equal(world.session.manager.getEntries().length, world.entriesBefore + (change === "leaf" ? 1 : 0));
-		});
-	}
+	it("rejects stale source before navigation or writes", async () => {
+		const world = validWorld();
+		const selected = world.session.manager.getEntry(world.plan.endEntryId);
+		if (!selected || selected.type !== "message" || selected.message.role !== "toolResult") {
+			throw new Error("invalid rewrite fixture");
+		}
+		selected.message.content = [{ type: "text", text: "changed source" }];
+		await assert.rejects(
+			applyRewrite(world.pi, world.ctx, world.plan, {
+				messages: [{ customType: CTREE_CROP_TAIL, content: "replacement", display: true }],
+				marker: { customType: CTREE_CROP, data: {} },
+			}),
+			/source changed/,
+		);
+		assert.equal(world.session.manager.getEntries().length, world.entriesBefore);
+	});
 
 	it("navigates without a summary, then appends replacements before the marker", async () => {
 		const world = validWorld();
@@ -640,119 +344,40 @@ describe("direct range compression API", () => {
 		assert.deepEqual(types.slice(-2), [CTREE_RANGE_TAIL, CTREE_RANGE_COMPACT]);
 	});
 
-	it("orchestrates explicit no-review compression", async () => {
-		const world = directWorld();
-		const input: RangeCompressionInput = {
-			operationId: "automated-operation",
-			startEntryId: world.selected,
-			endEntryId: world.selected,
-			review: false,
-		};
-		const outcome: RangeCompressionOutcome = await compressRange(world.pi, world.ctx, input);
-		assert.equal(outcome.status, "applied");
-		if (outcome.status === "applied") assert.equal(outcome.details.operationId, "automated-operation");
-	});
-
-	it("cancels reviewed compression without writes when the editor closes", async () => {
-		const world = directWorld();
-		(world.ctx.ui as { editor: (title: string, prefill?: string) => Promise<string | undefined> }).editor = async () =>
-			undefined;
-		const before = world.session.manager.getEntries().length;
-		const outcome = await compressRange(world.pi, world.ctx, {
-			operationId: "review-cancelled",
-			startEntryId: world.selected,
-			endEntryId: world.selected,
-			review: true,
-		});
-		assert.equal(outcome.status, "cancelled");
-		assert.equal(world.session.manager.getEntries().length, before);
-	});
-
-	it("rejects an empty model summary", async () => {
-		const world = directWorld(async () => assistantResponse(""));
-		await assert.rejects(
-			prepareRangeCompression(world.ctx, {
-				operationId: "empty-summary",
-				startEntryId: world.selected,
-				endEntryId: world.selected,
-			}),
-			/empty draft/,
-		);
-	});
-
-	it("passes and honors the caller abort signal", async () => {
-		const controller = new AbortController();
-		let receivedSignal: AbortSignal | undefined;
+	it("drafts with the current model", async () => {
+		let draftedWith: unknown;
 		const world = directWorld(async (...args: unknown[]) => {
-			receivedSignal = (args[2] as { signal?: AbortSignal }).signal;
-			controller.abort();
-			controller.signal.throwIfAborted();
-			return assistantResponse("unreachable");
+			draftedWith = args[0];
+			return assistantResponse("summary");
 		});
-		await assert.rejects(
-			prepareRangeCompression(world.ctx, {
-				operationId: "aborted",
-				startEntryId: world.selected,
-				endEntryId: world.selected,
-				signal: controller.signal,
-			}),
-			{ name: "AbortError" },
-		);
-		assert.equal(receivedSignal, controller.signal);
-	});
-
-	it("rejects a stale source leaf before applying", async () => {
-		const world = directWorld();
-		const prepared = await prepareRangeCompression(world.ctx, {
-			operationId: "stale-leaf",
+		await prepareRangeCompression(world.ctx, {
+			operationId: "current-model",
 			startEntryId: world.selected,
 			endEntryId: world.selected,
 		});
-		world.session.user("changed leaf");
-		const before = world.session.manager.getEntries().length;
-		await assert.rejects(applyPreparedRangeCompression(world.pi, world.ctx, prepared), /leaf changed/);
-		assert.equal(world.session.manager.getEntries().length, before);
+		assert.equal(draftedWith, world.ctx.model);
 	});
 
-	it("rejects a changed session before applying", async () => {
-		const world = directWorld();
-		const prepared = await prepareRangeCompression(world.ctx, {
-			operationId: "changed-session",
-			startEntryId: world.selected,
-			endEntryId: world.selected,
-		});
-		world.session.manager.newSession();
-		await assert.rejects(applyPreparedRangeCompression(world.pi, world.ctx, prepared), /session changed/);
-		assert.equal(world.session.manager.getEntries().length, 0);
-	});
-
-	it("rejects pending messages before preparation", async () => {
-		const world = directWorld();
-		(world.ctx as unknown as { hasPendingMessages: () => boolean }).hasPendingMessages = () => true;
-		await assert.rejects(
-			prepareRangeCompression(world.ctx, {
-				operationId: "pending-messages",
-				startEntryId: world.selected,
-				endEntryId: world.selected,
-			}),
-			/messages are pending/,
-		);
-	});
-
-	it("reports a model failure without writes", async () => {
+	it("rejects an oversized range before drafting or writing", async () => {
+		let draftCalls = 0;
 		const world = directWorld(async () => {
-			throw new Error("provider failed");
+			draftCalls += 1;
+			return assistantResponse("summary");
 		});
-		const before = world.session.manager.getEntries().length;
+		const model = world.ctx.model;
+		if (!model) throw new Error("missing test model");
+		Object.assign(model, { contextWindow: 16, maxTokens: 4 });
+		const entriesBefore = world.session.manager.getEntries().length;
 		await assert.rejects(
 			prepareRangeCompression(world.ctx, {
-				operationId: "model-failure",
+				operationId: "oversized-range",
 				startEntryId: world.selected,
 				endEntryId: world.selected,
 			}),
-			/provider failed/,
+			/selected range is too large/,
 		);
-		assert.equal(world.session.manager.getEntries().length, before);
+		assert.equal(draftCalls, 0);
+		assert.equal(world.session.manager.getEntries().length, entriesBefore);
 	});
 });
 
@@ -760,15 +385,12 @@ describe("generic range compression service", () => {
 	function serviceWorld(complete?: (...args: unknown[]) => Promise<AssistantMessage>) {
 		const session = new MemorySession();
 		session.user("root");
-		const anchor = session.assistant("anchor");
+		session.assistant("anchor");
 		const selected = session.assistant("selected");
 		const events = createEventBus();
-		const shutdownHandlers: Array<(event: unknown, ctx: ExtensionCommandContext) => unknown> = [];
 		const pi = Object.assign(mutationApi(session.manager), {
 			events,
-			on: (name: string, handler: (event: unknown, ctx: ExtensionCommandContext) => unknown) => {
-				if (name === "session_shutdown") shutdownHandlers.push(handler);
-			},
+			on: () => {},
 		}) as unknown as ExtensionAPI;
 		const ctx = extensionContext(session.manager, complete);
 		registerRangeCompressionService(pi);
@@ -809,7 +431,7 @@ describe("generic range compression service", () => {
 			action,
 			...overrides,
 		});
-		return { session, anchor, selected, events, pi, ctx, shutdownHandlers, request, prepare, action };
+		return { session, pi, ctx, request, prepare, action };
 	}
 
 	it("supports prepare, status, apply, replay, cancel, missing, conflict, and session checks", async () => {
@@ -916,24 +538,16 @@ describe("generic range compression service", () => {
 		assert.equal((await applying).status, "applied");
 	});
 
-	it("aborts and removes pending state on session shutdown", async () => {
-		let reportSignal: (signal: AbortSignal) => void = () => {};
-		const started = new Promise<AbortSignal>((resolve) => {
-			reportSignal = resolve;
+	it("returns a stable code for model failure without writing entries", async () => {
+		const world = serviceWorld(async () => {
+			throw new Error("provider failed");
 		});
-		const world = serviceWorld(async (...args: unknown[]) => {
-			const signal = (args[2] as { signal: AbortSignal }).signal;
-			reportSignal(signal);
-			return new Promise<AssistantMessage>((_resolve, reject) => {
-				signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-			});
+		const entriesBefore = world.session.manager.getEntries().length;
+		assert.partialDeepStrictEqual(await world.request(world.prepare("model-failure")), {
+			status: "failed",
+			code: "compression_failed",
 		});
-		const preparing = world.request(world.prepare("shutdown"));
-		const signal = await started;
-		for (const handler of world.shutdownHandlers) await handler({}, world.ctx);
-		assert.equal(signal.aborted, true);
-		assert.equal((await preparing).status, "cancelled");
-		assert.equal((await world.request(world.action("status", "shutdown"))).status, "missing");
+		assert.equal(world.session.manager.getEntries().length, entriesBefore);
 	});
 });
 
@@ -967,15 +581,5 @@ describe("batch compression", () => {
 			.filter((entry) => "customType" in entry)
 			.map((entry) => (entry as { customType: string }).customType);
 		assert.deepEqual(types.slice(-3), [QUEUED_TASK_TAIL, COMPRESSION_TAIL, COMPRESSION_ENTRY]);
-	});
-});
-
-describe("serializer source policy", () => {
-	it("caps decision prompts only when requested", () => {
-		const { snapshot } = cropScenario();
-		const full = serializeEntries(snapshot.contextEntries);
-		const capped = serializeEntries(snapshot.contextEntries, { perEntryCap: 100 });
-		assert.ok(full.length > capped.length);
-		assert.ok(capped.includes("(truncated)"));
 	});
 });

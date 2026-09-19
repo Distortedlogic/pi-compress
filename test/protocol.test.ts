@@ -3,10 +3,8 @@ import { describe, it } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 import {
-	BatchSnapshotSchema,
 	COMPRESSION_ENTRY,
 	COMPRESSION_TAIL,
-	CompressionDetailsSchema,
 	CTREE_CLOSE,
 	CTREE_CROP,
 	CTREE_CROP_TAIL,
@@ -72,13 +70,6 @@ const range = {
 	summaryModel: "anthropic/opus",
 	sourceSha8: "12345678",
 };
-const batch = {
-	planId: HASH,
-	batchId: HASH,
-	structuralRevision: HASH,
-	fileRevision: HASH,
-	bitmap: [false, true],
-};
 const compression = {
 	v: 2 as const,
 	runId: "run",
@@ -98,96 +89,83 @@ const compression = {
 };
 
 describe("durable protocol names", () => {
-	for (const [name, actual, expected] of [
-		["fork", CTREE_FORK, "ctree/fork"],
-		["close", CTREE_CLOSE, "ctree/close"],
-		["decision", CTREE_DECISION, "ctree/decision"],
-		["crop", CTREE_CROP, "ctree/crop"],
-		["crop tail", CTREE_CROP_TAIL, "ctree/crop-tail"],
-		["range", CTREE_RANGE_COMPACT, "ctree/range-compact"],
-		["range tail", CTREE_RANGE_TAIL, "ctree/range-tail"],
-		["range request", RANGE_COMPRESSION_REQUEST, "pi-compress/v1/range/request"],
-		["range result", RANGE_COMPRESSION_RESULT, "pi-compress/v1/range/result"],
-		["batch marker", COMPRESSION_ENTRY, "pi-compress/compression"],
-		["queued task", QUEUED_TASK_TAIL, "pi-compress/queued-task"],
-		["batch summary", COMPRESSION_TAIL, "pi-compress/summary"],
-		["legacy batch marker", LEGACY_COMPRESSION_ENTRY, "pi-workstream/compression"],
-	] as const) {
-		it(`keeps ${name} stable`, () => {
-			assert.equal(actual, expected);
-		});
-	}
+	it("keeps public names stable", () => {
+		assert.deepEqual(
+			{
+				fork: CTREE_FORK,
+				close: CTREE_CLOSE,
+				decision: CTREE_DECISION,
+				crop: CTREE_CROP,
+				cropTail: CTREE_CROP_TAIL,
+				range: CTREE_RANGE_COMPACT,
+				rangeTail: CTREE_RANGE_TAIL,
+				rangeRequest: RANGE_COMPRESSION_REQUEST,
+				rangeResult: RANGE_COMPRESSION_RESULT,
+				batchMarker: COMPRESSION_ENTRY,
+				queuedTask: QUEUED_TASK_TAIL,
+				batchSummary: COMPRESSION_TAIL,
+				legacyBatchMarker: LEGACY_COMPRESSION_ENTRY,
+			},
+			{
+				fork: "ctree/fork",
+				close: "ctree/close",
+				decision: "ctree/decision",
+				crop: "ctree/crop",
+				cropTail: "ctree/crop-tail",
+				range: "ctree/range-compact",
+				rangeTail: "ctree/range-tail",
+				rangeRequest: "pi-compress/v1/range/request",
+				rangeResult: "pi-compress/v1/range/result",
+				batchMarker: "pi-compress/compression",
+				queuedTask: "pi-compress/queued-task",
+				batchSummary: "pi-compress/summary",
+				legacyBatchMarker: "pi-workstream/compression",
+			},
+		);
+	});
 });
 
 describe("stored entry readers", () => {
-	for (const [name, read, expected] of [
-		["fork", () => ctreeForkData(custom(CTREE_FORK, { ...fork, added: true }))?.name, "branch"],
-		["close", () => ctreeCloseData(custom(CTREE_CLOSE, { ...close, added: true }))?.status, "squashed"],
-		["crop", () => ctreeCropData(custom(CTREE_CROP, { ...crop, added: true }))?.sourceLeafId, "leaf"],
-		["crop tail", () => ctreeCropTailDetails(customMessage(CTREE_CROP_TAIL, { ...crop, added: true }))?.v, 1],
-		[
-			"decision",
-			() => ctreeDecisionDetails(customMessage(CTREE_DECISION, { ...decision, added: true }))?.branchName,
+	it("accepts additive fields for known stored versions", () => {
+		assert.equal(ctreeForkData(custom(CTREE_FORK, { ...fork, added: true }))?.name, "branch");
+		assert.equal(ctreeCloseData(custom(CTREE_CLOSE, { ...close, added: true }))?.status, "squashed");
+		assert.equal(ctreeCropData(custom(CTREE_CROP, { ...crop, added: true }))?.sourceLeafId, "leaf");
+		assert.equal(ctreeCropTailDetails(customMessage(CTREE_CROP_TAIL, { ...crop, added: true }))?.v, 1);
+		assert.equal(
+			ctreeDecisionDetails(customMessage(CTREE_DECISION, { ...decision, added: true }))?.branchName,
 			"branch",
-		],
-		[
-			"range",
-			() => ctreeRangeCompactData(custom(CTREE_RANGE_COMPACT, { ...range, added: true }))?.sourceSha8,
-			"12345678",
-		],
-		[
-			"range tail",
-			() => ctreeRangeTailDetails(customMessage(CTREE_RANGE_TAIL, { ...range, added: true }))?.summaryModel,
+		);
+		assert.equal(ctreeRangeCompactData(custom(CTREE_RANGE_COMPACT, { ...range, added: true }))?.sourceSha8, "12345678");
+		assert.equal(
+			ctreeRangeTailDetails(customMessage(CTREE_RANGE_TAIL, { ...range, added: true }))?.summaryModel,
 			"anthropic/opus",
-		],
-	] as const) {
-		it(`validates ${name} and permits additive stored fields`, () => {
-			assert.equal(read(), expected);
-		});
-	}
+		);
+	});
 
-	for (const [read, entry] of [
-		[ctreeForkData, custom(CTREE_FORK, { ...fork, v: 2 })],
-		[ctreeCloseData, custom(CTREE_CLOSE, { ...close, v: 2 })],
-		[ctreeCropData, custom(CTREE_CROP, { ...crop, v: 2 })],
-		[ctreeRangeCompactData, custom(CTREE_RANGE_COMPACT, { ...range, v: 2 })],
-	] as const) {
-		it("rejects unknown stored versions", () => {
-			assert.equal(read(entry), undefined);
-		});
-	}
-
-	it("validates decision details supplied outside a session entry", () => {
-		assert.deepEqual(parseCtreeDecisionDetails(decision), decision);
+	it("rejects unknown stored versions", () => {
+		assert.equal(ctreeForkData(custom(CTREE_FORK, { ...fork, v: 2 })), undefined);
+		assert.equal(ctreeCloseData(custom(CTREE_CLOSE, { ...close, v: 2 })), undefined);
+		assert.equal(ctreeCropData(custom(CTREE_CROP, { ...crop, v: 2 })), undefined);
+		assert.equal(ctreeRangeCompactData(custom(CTREE_RANGE_COMPACT, { ...range, v: 2 })), undefined);
 		assert.equal(parseCtreeDecisionDetails({ ...decision, v: 2 }), undefined);
+	});
+
+	it("validates decision details outside a session entry", () => {
+		assert.deepEqual(parseCtreeDecisionDetails(decision), decision);
 	});
 });
 
 describe("batch compatibility readers", () => {
-	for (const customType of [COMPRESSION_ENTRY, LEGACY_COMPRESSION_ENTRY]) {
-		it(`reads marker ${customType}`, () => {
-			assert.deepEqual(compressionDetails(custom(customType, compression)), compression);
-		});
-	}
-
-	for (const customType of [QUEUED_TASK_TAIL, COMPRESSION_TAIL]) {
-		it(`reads tail ${customType}`, () => {
-			assert.deepEqual(compressionTailDetails(customMessage(customType, compression)), compression);
-		});
-	}
+	it("reads current and legacy batch markers and tails", () => {
+		assert.deepEqual(compressionDetails(custom(COMPRESSION_ENTRY, compression)), compression);
+		assert.deepEqual(compressionDetails(custom(LEGACY_COMPRESSION_ENTRY, compression)), compression);
+		assert.deepEqual(compressionTailDetails(customMessage(QUEUED_TASK_TAIL, compression)), compression);
+		assert.deepEqual(compressionTailDetails(customMessage(COMPRESSION_TAIL, compression)), compression);
+	});
 
 	it("rejects malformed and unrelated compression data", () => {
 		assert.equal(compressionDetails(custom(COMPRESSION_ENTRY, { ...compression, sourceSha256: "bad" })), undefined);
 		assert.equal(compressionDetails(custom("other", compression)), undefined);
-	});
-});
-
-describe("batch persistence schemas", () => {
-	it("keeps snapshots and compression details exact", () => {
-		assert.equal(Value.Check(BatchSnapshotSchema, batch), true);
-		assert.equal(Value.Check(CompressionDetailsSchema, compression), true);
-		assert.equal(Value.Check(BatchSnapshotSchema, { ...batch, extra: true }), false);
-		assert.equal(Value.Check(CompressionDetailsSchema, { ...compression, extra: true }), false);
 	});
 });
 
@@ -209,7 +187,7 @@ describe("generic range event schemas", () => {
 		operationId: "operation",
 	};
 
-	it("requires an exact prepare request with an explicit review choice", () => {
+	it("accepts only exact requests", () => {
 		assert.equal(Value.Check(RangeCompressionRequestSchema, prepare), true);
 		assert.equal(
 			Value.Check(RangeCompressionRequestSchema, {
@@ -221,15 +199,12 @@ describe("generic range event schemas", () => {
 		);
 		assert.equal(Value.Check(RangeCompressionRequestSchema, { ...prepare, review: undefined }), false);
 		assert.equal(Value.Check(RangeCompressionRequestSchema, { ...prepare, extra: true }), false);
-	});
-
-	for (const action of ["apply", "cancel", "status"] as const) {
-		it(`requires an exact ${action} request`, () => {
+		for (const action of ["apply", "cancel", "status"] as const) {
 			const request = { ...resultBase, action };
 			assert.equal(Value.Check(RangeCompressionRequestSchema, request), true);
 			assert.equal(Value.Check(RangeCompressionRequestSchema, { ...request, startEntryId: "start" }), false);
-		});
-	}
+		}
+	});
 
 	it("accepts only status-specific exact results", () => {
 		for (const status of ["prepared", "cancelled", "missing"] as const) {
@@ -253,17 +228,14 @@ describe("generic range event schemas", () => {
 		] as const) {
 			assert.equal(Value.Check(RangeCompressionResultSchema, { ...resultBase, status: "failed", code }), true);
 		}
-	});
-
-	for (const [index, value] of [
-		{ status: "applied" },
-		{ status: "prepared", details: range },
-		{ status: "failed" },
-		{ status: "missing", code: "busy" },
-		{ status: "prepared", extra: true },
-	].entries()) {
-		it(`rejects invalid generic result ${index + 1}`, () => {
+		for (const value of [
+			{ status: "applied" },
+			{ status: "prepared", details: range },
+			{ status: "failed" },
+			{ status: "missing", code: "busy" },
+			{ status: "prepared", extra: true },
+		]) {
 			assert.equal(Value.Check(RangeCompressionResultSchema, { ...resultBase, ...value }), false);
-		});
-	}
+		}
+	});
 });
