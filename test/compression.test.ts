@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AssistantMessage, ToolCall } from "@earendil-works/pi-ai";
-import {
-	createEventBus,
-	type ExtensionAPI,
-	type ExtensionCommandContext,
-	SessionManager,
-} from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionCommandContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import { snapshotSession } from "../src/context.ts";
 import { planCrop, renderReconstruction } from "../src/crop.ts";
 import {
@@ -19,11 +14,6 @@ import {
 	CTREE_RANGE_COMPACT,
 	CTREE_RANGE_TAIL,
 	QUEUED_TASK_TAIL,
-	RANGE_COMPRESSION_REQUEST,
-	RANGE_COMPRESSION_RESULT,
-	type RangeCompressionPrepareRequest,
-	type RangeCompressionRequest,
-	type RangeCompressionResult,
 } from "../src/protocol.ts";
 import {
 	applyCompression,
@@ -32,7 +22,6 @@ import {
 	prepareCompression,
 	prepareRangeCompression,
 	type RangeCompressionTarget,
-	registerRangeCompressionService,
 	renderRangeTail,
 	reviewRangeCompression,
 } from "../src/range-compression.ts";
@@ -377,176 +366,6 @@ describe("direct range compression API", () => {
 			/selected range is too large/,
 		);
 		assert.equal(draftCalls, 0);
-		assert.equal(world.session.manager.getEntries().length, entriesBefore);
-	});
-});
-
-describe("generic range compression service", () => {
-	function serviceWorld(complete?: (...args: unknown[]) => Promise<AssistantMessage>) {
-		const session = new MemorySession();
-		session.user("root");
-		session.assistant("anchor");
-		const selected = session.assistant("selected");
-		const events = createEventBus();
-		const pi = Object.assign(mutationApi(session.manager), {
-			events,
-			on: () => {},
-		}) as unknown as ExtensionAPI;
-		const ctx = extensionContext(session.manager, complete);
-		registerRangeCompressionService(pi);
-		let requestNumber = 0;
-		const request = (value: RangeCompressionRequest): Promise<RangeCompressionResult> =>
-			new Promise((resolve) => {
-				const unsubscribe = events.on(RANGE_COMPRESSION_RESULT, (result) => {
-					const parsed = result as RangeCompressionResult;
-					if (parsed.requestId !== value.requestId) return;
-					unsubscribe();
-					resolve(parsed);
-				});
-				events.emit(RANGE_COMPRESSION_REQUEST, { request: value, context: ctx });
-			});
-		const prepare = (
-			operationId = "operation",
-			overrides: Partial<RangeCompressionPrepareRequest> = {},
-		): RangeCompressionPrepareRequest => ({
-			v: 1,
-			requestId: `prepare-${++requestNumber}`,
-			sessionId: session.manager.getSessionId(),
-			operationId,
-			action: "prepare",
-			startEntryId: selected,
-			endEntryId: selected,
-			review: false,
-			...overrides,
-		});
-		const action = (
-			action: "apply" | "cancel" | "status",
-			operationId = "operation",
-			overrides: { requestId?: string; sessionId?: string } = {},
-		): RangeCompressionRequest => ({
-			v: 1,
-			requestId: `${action}-${++requestNumber}`,
-			sessionId: session.manager.getSessionId(),
-			operationId,
-			action,
-			...overrides,
-		});
-		return { session, pi, ctx, request, prepare, action };
-	}
-
-	it("supports prepare, status, apply, replay, cancel, missing, conflict, and session checks", async () => {
-		const world = serviceWorld();
-		assert.equal((await world.request(world.action("status"))).status, "missing");
-		assert.equal((await world.request(world.prepare())).status, "prepared");
-		assert.equal((await world.request(world.action("status"))).status, "prepared");
-		assert.partialDeepStrictEqual(await world.request(world.prepare("operation", { instructions: "different" })), {
-			status: "failed",
-			code: "operation_conflict",
-		});
-		const applied = await world.request(world.action("apply"));
-		assert.equal(applied.status, "applied");
-		if (applied.status === "applied") assert.equal(applied.details.operationId, "operation");
-		assert.equal((await world.request(world.action("apply"))).status, "applied");
-		assert.partialDeepStrictEqual(await world.request(world.action("apply", "missing")), {
-			status: "failed",
-			code: "not_prepared",
-		});
-		assert.partialDeepStrictEqual(await world.request(world.action("status", "other", { sessionId: "other" })), {
-			status: "failed",
-			code: "session_changed",
-		});
-
-		const cancelled = serviceWorld();
-		assert.equal((await cancelled.request(cancelled.action("cancel"))).status, "cancelled");
-		assert.equal((await cancelled.request(cancelled.action("status"))).status, "cancelled");
-	});
-
-	it("reuses an identical in-flight preparation and rejects conflicting data", async () => {
-		let release: (message: AssistantMessage) => void = () => {};
-		let started: () => void = () => {};
-		const entered = new Promise<void>((resolve) => {
-			started = resolve;
-		});
-		const response = new Promise<AssistantMessage>((resolve) => {
-			release = resolve;
-		});
-		let calls = 0;
-		const world = serviceWorld(async () => {
-			calls += 1;
-			started();
-			return response;
-		});
-		const original = world.prepare("shared", { requestId: "first" });
-		const first = world.request(original);
-		await entered;
-		const duplicate = world.request({ ...original, requestId: "duplicate" });
-		const conflict = await world.request({ ...original, requestId: "conflict", instructions: "different" });
-		assert.partialDeepStrictEqual(conflict, { status: "failed", code: "operation_conflict" });
-		release(assistantResponse("summary"));
-		assert.equal((await first).status, "prepared");
-		assert.equal((await duplicate).status, "prepared");
-		assert.equal(calls, 1);
-	});
-
-	it("aborts a pending preparation on cancel", async () => {
-		let reportSignal: (signal: AbortSignal) => void = () => {};
-		const started = new Promise<AbortSignal>((resolve) => {
-			reportSignal = resolve;
-		});
-		const world = serviceWorld(async (...args: unknown[]) => {
-			const signal = (args[2] as { signal: AbortSignal }).signal;
-			reportSignal(signal);
-			return new Promise<AssistantMessage>((_resolve, reject) => {
-				signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-			});
-		});
-		const preparing = world.request(world.prepare("cancel-pending"));
-		const signal = await started;
-		assert.equal((await world.request(world.action("cancel", "cancel-pending"))).status, "cancelled");
-		assert.equal(signal.aborted, true);
-		assert.equal((await preparing).status, "cancelled");
-	});
-
-	it("returns busy for a concurrent session mutation", async () => {
-		const world = serviceWorld();
-		assert.equal((await world.request(world.prepare("first"))).status, "prepared");
-		assert.equal((await world.request(world.prepare("second"))).status, "prepared");
-		let enterNavigation: () => void = () => {};
-		let releaseNavigation: () => void = () => {};
-		const entered = new Promise<void>((resolve) => {
-			enterNavigation = resolve;
-		});
-		const blocked = new Promise<void>((resolve) => {
-			releaseNavigation = resolve;
-		});
-		const navigate = world.ctx.navigateTree;
-		(world.ctx as unknown as { navigateTree: ExtensionCommandContext["navigateTree"] }).navigateTree = async (
-			targetId,
-			options,
-		) => {
-			enterNavigation();
-			await blocked;
-			return navigate(targetId, options);
-		};
-		const applying = world.request(world.action("apply", "first"));
-		await entered;
-		assert.partialDeepStrictEqual(await world.request(world.action("apply", "second")), {
-			status: "failed",
-			code: "busy",
-		});
-		releaseNavigation();
-		assert.equal((await applying).status, "applied");
-	});
-
-	it("returns a stable code for model failure without writing entries", async () => {
-		const world = serviceWorld(async () => {
-			throw new Error("provider failed");
-		});
-		const entriesBefore = world.session.manager.getEntries().length;
-		assert.partialDeepStrictEqual(await world.request(world.prepare("model-failure")), {
-			status: "failed",
-			code: "compression_failed",
-		});
 		assert.equal(world.session.manager.getEntries().length, entriesBefore);
 	});
 });

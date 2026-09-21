@@ -1,36 +1,10 @@
-import type {
-	CustomEntry,
-	CustomMessageEntry,
-	ExtensionCommandContext,
-	SessionEntry,
-} from "@earendil-works/pi-coding-agent";
+import type { CustomEntry, CustomMessageEntry, SessionEntry } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 
 const exact = { additionalProperties: false } as const;
 const Id = Type.String({ minLength: 1 });
 const Hash = Type.String({ pattern: "^[a-f0-9]{64}$" });
-const CompressionOperationProperties = {
-	v: Type.Literal(1),
-	requestId: Id,
-	sessionId: Id,
-	operationId: Id,
-};
-const CompressionStatusSchema = Type.Union([
-	Type.Literal("prepared"),
-	Type.Literal("applied"),
-	Type.Literal("cancelled"),
-	Type.Literal("missing"),
-	Type.Literal("failed"),
-]);
-const CompressionFailureCodeSchema = Type.Union([
-	Type.Literal("invalid_request"),
-	Type.Literal("operation_conflict"),
-	Type.Literal("session_changed"),
-	Type.Literal("compression_failed"),
-	Type.Literal("not_prepared"),
-	Type.Literal("busy"),
-]);
 
 export const CTREE_FORK = "ctree/fork";
 export const CTREE_CLOSE = "ctree/close";
@@ -39,8 +13,6 @@ export const CTREE_CROP = "ctree/crop";
 export const CTREE_CROP_TAIL = "ctree/crop-tail";
 export const CTREE_RANGE_COMPACT = "ctree/range-compact";
 export const CTREE_RANGE_TAIL = "ctree/range-tail";
-export const RANGE_COMPRESSION_REQUEST = "pi-compress/v1/range/request";
-export const RANGE_COMPRESSION_RESULT = "pi-compress/v1/range/result";
 
 export const CtreeCloseStatusSchema = Type.Union([
 	Type.Literal("squashed"),
@@ -125,68 +97,6 @@ export const CtreeRangeCompactDataSchema = Type.Object({
 });
 export type CtreeRangeCompactData = Static<typeof CtreeRangeCompactDataSchema>;
 export type CtreeRangeTailDetails = CtreeRangeCompactData;
-
-export const RangeCompressionStatusSchema = CompressionStatusSchema;
-export type RangeCompressionStatus = Static<typeof RangeCompressionStatusSchema>;
-
-export const RangeCompressionFailureCodeSchema = CompressionFailureCodeSchema;
-export type RangeCompressionFailureCode = Static<typeof RangeCompressionFailureCodeSchema>;
-
-export const RangeCompressionRequestSchema = Type.Union([
-	Type.Object(
-		{
-			...CompressionOperationProperties,
-			action: Type.Literal("prepare"),
-			startEntryId: Id,
-			endEntryId: Id,
-			review: Type.Boolean(),
-			anchorEntryId: Type.Optional(Id),
-			instructions: Type.Optional(Type.String()),
-		},
-		exact,
-	),
-	Type.Object({ ...CompressionOperationProperties, action: Type.Literal("apply") }, exact),
-	Type.Object({ ...CompressionOperationProperties, action: Type.Literal("cancel") }, exact),
-	Type.Object({ ...CompressionOperationProperties, action: Type.Literal("status") }, exact),
-]);
-export type RangeCompressionRequest = Static<typeof RangeCompressionRequestSchema>;
-export type RangeCompressionPrepareRequest = Extract<RangeCompressionRequest, { action: "prepare" }>;
-export type RangeCompressionApplyRequest = Extract<RangeCompressionRequest, { action: "apply" }>;
-export type RangeCompressionCancelRequest = Extract<RangeCompressionRequest, { action: "cancel" }>;
-export type RangeCompressionStatusRequest = Extract<RangeCompressionRequest, { action: "status" }>;
-
-export const RangeCompressionResultSchema = Type.Union([
-	Type.Object({ ...CompressionOperationProperties, status: Type.Literal("prepared") }, exact),
-	Type.Object(
-		{
-			...CompressionOperationProperties,
-			status: Type.Literal("applied"),
-			details: CtreeRangeCompactDataSchema,
-		},
-		exact,
-	),
-	Type.Object({ ...CompressionOperationProperties, status: Type.Literal("cancelled") }, exact),
-	Type.Object({ ...CompressionOperationProperties, status: Type.Literal("missing") }, exact),
-	Type.Object(
-		{
-			...CompressionOperationProperties,
-			status: Type.Literal("failed"),
-			code: CompressionFailureCodeSchema,
-		},
-		exact,
-	),
-]);
-export type RangeCompressionResult = Static<typeof RangeCompressionResultSchema>;
-export type RangeCompressionPreparedResult = Extract<RangeCompressionResult, { status: "prepared" }>;
-export type RangeCompressionAppliedResult = Extract<RangeCompressionResult, { status: "applied" }>;
-export type RangeCompressionCancelledResult = Extract<RangeCompressionResult, { status: "cancelled" }>;
-export type RangeCompressionMissingResult = Extract<RangeCompressionResult, { status: "missing" }>;
-export type RangeCompressionFailedResult = Extract<RangeCompressionResult, { status: "failed" }>;
-
-export interface RangeCompressionTransport {
-	request: RangeCompressionRequest;
-	context: ExtensionCommandContext;
-}
 
 export const COMPRESSION_ENTRY = "pi-compress/compression";
 export const QUEUED_TASK_TAIL = "pi-compress/queued-task";

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { Value } from "typebox/value";
 import {
 	COMPRESSION_ENTRY,
 	COMPRESSION_TAIL,
@@ -24,10 +23,6 @@ import {
 	LEGACY_COMPRESSION_ENTRY,
 	parseCtreeDecisionDetails,
 	QUEUED_TASK_TAIL,
-	RANGE_COMPRESSION_REQUEST,
-	RANGE_COMPRESSION_RESULT,
-	RangeCompressionRequestSchema,
-	RangeCompressionResultSchema,
 } from "../src/protocol.ts";
 
 const HASH = "a".repeat(64);
@@ -99,8 +94,6 @@ describe("durable protocol names", () => {
 				cropTail: CTREE_CROP_TAIL,
 				range: CTREE_RANGE_COMPACT,
 				rangeTail: CTREE_RANGE_TAIL,
-				rangeRequest: RANGE_COMPRESSION_REQUEST,
-				rangeResult: RANGE_COMPRESSION_RESULT,
 				batchMarker: COMPRESSION_ENTRY,
 				queuedTask: QUEUED_TASK_TAIL,
 				batchSummary: COMPRESSION_TAIL,
@@ -114,8 +107,6 @@ describe("durable protocol names", () => {
 				cropTail: "ctree/crop-tail",
 				range: "ctree/range-compact",
 				rangeTail: "ctree/range-tail",
-				rangeRequest: "pi-compress/v1/range/request",
-				rangeResult: "pi-compress/v1/range/result",
 				batchMarker: "pi-compress/compression",
 				queuedTask: "pi-compress/queued-task",
 				batchSummary: "pi-compress/summary",
@@ -166,76 +157,5 @@ describe("batch compatibility readers", () => {
 	it("rejects malformed and unrelated compression data", () => {
 		assert.equal(compressionDetails(custom(COMPRESSION_ENTRY, { ...compression, sourceSha256: "bad" })), undefined);
 		assert.equal(compressionDetails(custom("other", compression)), undefined);
-	});
-});
-
-describe("generic range event schemas", () => {
-	const prepare = {
-		v: 1 as const,
-		requestId: "request",
-		sessionId: "session",
-		operationId: "operation",
-		action: "prepare" as const,
-		startEntryId: "start",
-		endEntryId: "end",
-		review: false,
-	};
-	const resultBase = {
-		v: 1 as const,
-		requestId: "request",
-		sessionId: "session",
-		operationId: "operation",
-	};
-
-	it("accepts only exact requests", () => {
-		assert.equal(Value.Check(RangeCompressionRequestSchema, prepare), true);
-		assert.equal(
-			Value.Check(RangeCompressionRequestSchema, {
-				...prepare,
-				anchorEntryId: "anchor",
-				instructions: "keep errors",
-			}),
-			true,
-		);
-		assert.equal(Value.Check(RangeCompressionRequestSchema, { ...prepare, review: undefined }), false);
-		assert.equal(Value.Check(RangeCompressionRequestSchema, { ...prepare, extra: true }), false);
-		for (const action of ["apply", "cancel", "status"] as const) {
-			const request = { ...resultBase, action };
-			assert.equal(Value.Check(RangeCompressionRequestSchema, request), true);
-			assert.equal(Value.Check(RangeCompressionRequestSchema, { ...request, startEntryId: "start" }), false);
-		}
-	});
-
-	it("accepts only status-specific exact results", () => {
-		for (const status of ["prepared", "cancelled", "missing"] as const) {
-			assert.equal(Value.Check(RangeCompressionResultSchema, { ...resultBase, status }), true);
-		}
-		assert.equal(
-			Value.Check(RangeCompressionResultSchema, {
-				...resultBase,
-				status: "applied",
-				details: { ...range, operationId: "operation" },
-			}),
-			true,
-		);
-		for (const code of [
-			"invalid_request",
-			"operation_conflict",
-			"session_changed",
-			"compression_failed",
-			"not_prepared",
-			"busy",
-		] as const) {
-			assert.equal(Value.Check(RangeCompressionResultSchema, { ...resultBase, status: "failed", code }), true);
-		}
-		for (const value of [
-			{ status: "applied" },
-			{ status: "prepared", details: range },
-			{ status: "failed" },
-			{ status: "missing", code: "busy" },
-			{ status: "prepared", extra: true },
-		]) {
-			assert.equal(Value.Check(RangeCompressionResultSchema, { ...resultBase, ...value }), false);
-		}
 	});
 });

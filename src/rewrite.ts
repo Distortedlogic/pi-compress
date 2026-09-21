@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { hash } from "node:crypto";
 import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
 	estimateEntryTokens,
@@ -240,7 +240,7 @@ export function prepareRewrite(
 		source,
 		continuationSerialized: serializeEntries(continuationEntries),
 		selectedEstTokens: selectedEntries.reduce((total, entry) => total + estimateEntryTokens(entry), 0),
-		sourceSha256: createHash("sha256").update(source).digest("hex"),
+		sourceSha256: hash("sha256", source, "hex"),
 	};
 }
 

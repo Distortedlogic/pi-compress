@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { hash } from "node:crypto";
 import { contentText } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
@@ -172,7 +172,7 @@ export function planCrop(snapshot: SessionSnapshot, markedIds: string[]): CropPl
 			tool: toolNameOf(entry) ?? "tool",
 			arg: primaryArg(snapshot, entry),
 			estTokens: estimateEntryTokens(entry),
-			sha8: createHash("sha256").update(body).digest("hex").slice(0, 8),
+			sha8: hash("sha256", body, "hex").slice(0, 8),
 		};
 	});
 	return {
@@ -230,7 +230,7 @@ export function planRemoveTurns(snapshot: SessionSnapshot, userIds: string[]): C
 			entryIds: turn.entryIds,
 			label: turn.label,
 			estTokens: turn.estTokens,
-			sha8: createHash("sha256").update(body).digest("hex").slice(0, 8),
+			sha8: hash("sha256", body, "hex").slice(0, 8),
 		};
 	});
 	return {
