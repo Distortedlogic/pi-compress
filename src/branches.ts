@@ -38,11 +38,6 @@ interface DecisionDraft {
 	rejected?: { name: string; reason: string }[];
 }
 
-export interface DecisionArgs {
-	export: boolean;
-	exportPath?: string;
-}
-
 type MergeMode = "squash" | "no-llm" | "discard" | "tournament";
 
 const NAME_RE = /^[a-z0-9][a-z0-9._-]*$/i;
@@ -112,20 +107,6 @@ function exportDecisionsMarkdown(records: readonly string[], project?: string): 
 		return `${title}\n\n${meta}\n\n_(none yet — \`/merge\` → squash creates them.)_\n`;
 	}
 	return `${title}\n\n${meta}\n\n${records.map((record) => record.trim()).join("\n\n---\n\n")}\n`;
-}
-
-export function parseDecisionArgs(args: string): DecisionArgs {
-	const parsed = parseArgs(args, {
-		string: ["export"],
-		configuration: ARGUMENT_CONFIGURATION,
-	});
-	const hasExport = Object.hasOwn(parsed, "export");
-	const optionPath = typeof parsed.export === "string" ? parsed.export.trim() : "";
-	const positionalPath = parsed._[0] === undefined ? "" : String(parsed._[0]);
-	return {
-		export: hasExport,
-		exportPath: optionPath || positionalPath || undefined,
-	};
 }
 
 export function notifyDecisions(ctx: ExtensionContext): void {
@@ -209,23 +190,6 @@ export async function branchHandler(pi: ExtensionAPI, ctx: ExtensionCommandConte
 		`⎇ branched: ${name}${branchModel ? ` on ${modelKey(branchModel)}` : ""} — /merge squashes it back to this point`,
 		"info",
 	);
-}
-
-function parseMergeArgs(args: string): { mode?: MergeMode; pick: boolean; note: string } {
-	const parsed = parseArgs(args, {
-		boolean: ["squash", "no-llm", "discard", "tournament", "pick"],
-		configuration: ARGUMENT_CONFIGURATION,
-	});
-	const mode = parsed.squash
-		? "squash"
-		: parsed["no-llm"]
-			? "no-llm"
-			: parsed.discard
-				? "discard"
-				: parsed.tournament
-					? "tournament"
-					: undefined;
-	return { mode, pick: parsed.pick === true, note: parsed._.map(String).join(" ") };
 }
 
 async function pickMode(
@@ -313,8 +277,21 @@ export async function mergeHandler(
 		return;
 	}
 	const siblings = siblingForks(state.forks, fork.entryId);
-	const parsed = parseMergeArgs(args);
-	const mode = parsed.mode ?? (parsed.pick ? await pickMode(ctx, fork, siblings) : "squash");
+	const parsed = parseArgs(args, {
+		boolean: ["squash", "no-llm", "discard", "tournament", "pick"],
+		configuration: ARGUMENT_CONFIGURATION,
+	});
+	const note = parsed._.map(String).join(" ");
+	const flagMode: MergeMode | undefined = parsed.squash
+		? "squash"
+		: parsed["no-llm"]
+			? "no-llm"
+			: parsed.discard
+				? "discard"
+				: parsed.tournament
+					? "tournament"
+					: undefined;
+	const mode = flagMode ?? (parsed.pick === true ? await pickMode(ctx, fork, siblings) : "squash");
 	if (!mode) {
 		ctx.ui.notify("merge cancelled — nothing written", "info");
 		return;
@@ -326,7 +303,7 @@ export async function mergeHandler(
 
 	const branchModelRef = fork.data.branchModel ?? modelKey(ctx.model);
 	if (mode === "discard") {
-		const note = parsed.note || (await ctx.ui.input("optional one-line note for the close marker", "dead end"));
+		const discardNote = note || (await ctx.ui.input("optional one-line note for the close marker", "dead end"));
 		const navigation = await ctx.navigateTree(fork.entryId, { summarize: false });
 		if (navigation.cancelled) {
 			ctx.ui.notify("merge aborted — navigation cancelled, nothing written", "warning");
@@ -336,7 +313,7 @@ export async function mergeHandler(
 			v: 1,
 			forkEntryId: fork.entryId,
 			status: "discarded",
-			note: note?.trim() || undefined,
+			note: discardNote?.trim() || undefined,
 			prevLeafId: state.leafId,
 		});
 		await restoreTrunkModel(pi, ctx, fork);
@@ -360,7 +337,7 @@ export async function mergeHandler(
 					fork.data.name,
 					template,
 					serializeEntries(branchEntries(state, fork.entryId), { perEntryCap: 2000 }),
-					parsed.note || undefined,
+					note || undefined,
 				),
 			);
 		} catch (error) {

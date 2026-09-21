@@ -24,7 +24,7 @@ import {
 } from "@earendil-works/pi-tui";
 import parseArgs from "yargs-parser";
 import { renderGauge } from "./ambient.ts";
-import { branchHandler, exportDecisions, mergeHandler, notifyDecisions, parseDecisionArgs } from "./branches.ts";
+import { branchHandler, exportDecisions, mergeHandler, notifyDecisions } from "./branches.ts";
 import {
 	aggregateConsumers,
 	decisionsOnPath,
@@ -89,7 +89,7 @@ interface CropFlags {
 	keep: string[];
 }
 
-const CROP_ARGUMENT_CONFIGURATION = {
+const ARGUMENT_CONFIGURATION = {
 	"boolean-negation": false,
 	"camel-case-expansion": false,
 	"parse-numbers": false,
@@ -654,26 +654,6 @@ async function openPanel(ctx: ExtensionContext, opts: PanelOpenOptions = {}): Pr
 	return action;
 }
 
-function parseCropFlags(args: string): CropFlags {
-	const parsed = parseArgs(args, {
-		array: ["keep"],
-		boolean: ["auto", "dry-run", "apply", "top"],
-		number: ["min-tokens", "older-than"],
-		string: ["keep"],
-		configuration: CROP_ARGUMENT_CONFIGURATION,
-	});
-	const keep = parsed.keep === undefined ? [] : (Array.isArray(parsed.keep) ? parsed.keep : [parsed.keep]).map(String);
-	return {
-		auto: parsed.auto === true,
-		dryRun: parsed["dry-run"] === true,
-		apply: parsed.apply === true,
-		top: parsed.top === true,
-		minTokens: typeof parsed["min-tokens"] === "number" ? parsed["min-tokens"] : undefined,
-		olderThan: typeof parsed["older-than"] === "number" ? parsed["older-than"] : undefined,
-		keep,
-	};
-}
-
 function notifyDryRun(ctx: ExtensionCommandContext, plan: CropPlan): void {
 	const lines = plan.stubs.map((stub) => `${stub.tool}${stub.arg ? ` ${stub.arg}` : ""} ~${fmtTokens(stub.estTokens)}`);
 	ctx.ui.notify(
@@ -684,7 +664,22 @@ function notifyDryRun(ctx: ExtensionCommandContext, plan: CropPlan): void {
 
 export async function cropHandler(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {
 	await ctx.waitForIdle();
-	const flags = parseCropFlags(args);
+	const parsed = parseArgs(args, {
+		array: ["keep"],
+		boolean: ["auto", "dry-run", "apply", "top"],
+		number: ["min-tokens", "older-than"],
+		string: ["keep"],
+		configuration: ARGUMENT_CONFIGURATION,
+	});
+	const flags: CropFlags = {
+		auto: parsed.auto === true,
+		dryRun: parsed["dry-run"] === true,
+		apply: parsed.apply === true,
+		top: parsed.top === true,
+		minTokens: typeof parsed["min-tokens"] === "number" ? parsed["min-tokens"] : undefined,
+		olderThan: typeof parsed["older-than"] === "number" ? parsed["older-than"] : undefined,
+		keep: parsed.keep === undefined ? [] : (Array.isArray(parsed.keep) ? parsed.keep : [parsed.keep]).map(String),
+	};
 	const state = deriveState(ctx);
 	if (!state.leafId) {
 		ctx.ui.notify("empty session — nothing to crop", "warning");
@@ -822,9 +817,11 @@ export function registerPanel(pi: ExtensionAPI, draft: DraftFn): void {
 	pi.registerCommand("decisions", {
 		description: "pi-compress: decision records on the current trunk (F7) — --export [path] for portable markdown",
 		handler: async (args, ctx) => {
-			const parsed = parseDecisionArgs(args);
-			if (parsed.export) {
-				exportDecisions(ctx, parsed.exportPath);
+			const parsed = parseArgs(args, { string: ["export"], configuration: ARGUMENT_CONFIGURATION });
+			if (Object.hasOwn(parsed, "export")) {
+				const optionPath = typeof parsed.export === "string" ? parsed.export.trim() : "";
+				const positionalPath = parsed._[0] === undefined ? "" : String(parsed._[0]);
+				exportDecisions(ctx, optionPath || positionalPath || undefined);
 				return;
 			}
 			if (ctx.mode !== "tui") {
