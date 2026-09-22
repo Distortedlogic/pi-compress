@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import type { AssistantMessage, Model, ToolCall } from "@earendil-works/pi-ai";
+import type { Model } from "@earendil-works/pi-ai";
 import {
 	createEventBus,
 	type ExtensionAPI,
@@ -10,7 +10,7 @@ import {
 	type ExtensionContext,
 	initTheme,
 	RpcClient,
-	SessionManager,
+	type SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, visibleWidth } from "@earendil-works/pi-tui";
 import { registerAmbient, resetAmbient } from "../src/ambient.ts";
@@ -19,82 +19,9 @@ import type { DraftFn } from "../src/draft.ts";
 import piContextCompress from "../src/index.ts";
 import { buildPanelInput, ContextPanel, cropHandler } from "../src/panel.ts";
 import { CTREE_CLOSE, CTREE_CROP, CTREE_CROP_TAIL, CTREE_DECISION, CTREE_FORK } from "../src/protocol.ts";
+import { assistantResponse, MemorySession, models } from "./helpers.ts";
 
 initTheme("dark");
-
-function usage() {
-	return {
-		input: 0,
-		output: 0,
-		cacheRead: 0,
-		cacheWrite: 0,
-		totalTokens: 0,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-	};
-}
-
-class MemorySession {
-	readonly manager = SessionManager.inMemory("/test/project");
-	private now = 1;
-
-	user(text: string): string {
-		return this.manager.appendMessage({ role: "user", content: text, timestamp: this.now++ });
-	}
-
-	assistant(text: string, toolCalls: ToolCall[] = []): string {
-		return this.manager.appendMessage({
-			role: "assistant",
-			content: [...(text ? [{ type: "text" as const, text }] : []), ...toolCalls],
-			api: "openai-completions",
-			provider: "openai",
-			model: "test-model",
-			usage: usage(),
-			stopReason: toolCalls.length ? "toolUse" : "stop",
-			timestamp: this.now++,
-		});
-	}
-
-	toolUse(name: string, args: Record<string, unknown>, output: string): { call: string; result: string } {
-		const id = `call-${this.now}`;
-		const call = this.assistant("", [{ type: "toolCall", id, name, arguments: args }]);
-		const result = this.manager.appendMessage({
-			role: "toolResult",
-			toolCallId: id,
-			toolName: name,
-			content: [{ type: "text", text: output }],
-			isError: false,
-			timestamp: this.now++,
-		});
-		return { call, result };
-	}
-}
-
-const models = [
-	{
-		provider: "openai",
-		id: "test-model",
-		name: "Test Model",
-		api: "openai-completions",
-		baseUrl: "http://127.0.0.1:9/v1",
-		reasoning: false,
-		input: ["text"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 200_000,
-		maxTokens: 4096,
-	},
-	{
-		provider: "openai",
-		id: "cheap-model",
-		name: "Cheap Model",
-		api: "openai-completions",
-		baseUrl: "http://127.0.0.1:9/v1",
-		reasoning: false,
-		input: ["text"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 200_000,
-		maxTokens: 4096,
-	},
-] as unknown as Model<any>[];
 
 class TestUi {
 	readonly theme = {
@@ -234,19 +161,6 @@ function world(): World {
 		renderers,
 		navigations,
 		modelsSet,
-	};
-}
-
-function assistantResponse(text: string): AssistantMessage {
-	return {
-		role: "assistant",
-		content: [{ type: "text", text }],
-		api: "openai-completions",
-		provider: "openai",
-		model: "test-model",
-		usage: usage(),
-		stopReason: "stop",
-		timestamp: Date.now(),
 	};
 }
 
