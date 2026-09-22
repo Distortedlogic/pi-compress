@@ -1,5 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
+import { parseArgs } from "node:util";
 import { contentText } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
@@ -7,7 +8,6 @@ import type {
 	ExtensionContext,
 	SessionEntry,
 } from "@earendil-works/pi-coding-agent";
-import parseArgs from "yargs-parser";
 import { refreshAmbient } from "./ambient.ts";
 import { decisionsOnPath, deriveState, type ForkInfo, type SessionState, serializeEntries } from "./context.ts";
 import { DRAFT_SYSTEM_PROMPT, type DraftFn, draftUserPrompt, modelKey, resolveModel } from "./draft.ts";
@@ -41,12 +41,6 @@ interface DecisionDraft {
 type MergeMode = "squash" | "no-llm" | "discard" | "tournament";
 
 const NAME_RE = /^[a-z0-9][a-z0-9._-]*$/i;
-const ARGUMENT_CONFIGURATION = {
-	"boolean-negation": false,
-	"camel-case-expansion": false,
-	"parse-numbers": false,
-	"unknown-options-as-args": true,
-} as const;
 let modelReferences: string[] = [];
 
 function siblingForks(forks: ForkInfo[], forkEntryId: string): ForkInfo[] {
@@ -277,21 +271,30 @@ export async function mergeHandler(
 		return;
 	}
 	const siblings = siblingForks(state.forks, fork.entryId);
-	const parsed = parseArgs(args, {
-		boolean: ["squash", "no-llm", "discard", "tournament", "pick"],
-		configuration: ARGUMENT_CONFIGURATION,
+	const parsed = parseArgs({
+		args: args.trim().split(/\s+/).filter(Boolean),
+		options: {
+			squash: { type: "boolean" },
+			"no-llm": { type: "boolean" },
+			discard: { type: "boolean" },
+			tournament: { type: "boolean" },
+			pick: { type: "boolean" },
+		},
+		allowPositionals: true,
+		strict: false,
 	});
-	const note = parsed._.map(String).join(" ");
-	const flagMode: MergeMode | undefined = parsed.squash
-		? "squash"
-		: parsed["no-llm"]
-			? "no-llm"
-			: parsed.discard
-				? "discard"
-				: parsed.tournament
-					? "tournament"
-					: undefined;
-	const mode = flagMode ?? (parsed.pick === true ? await pickMode(ctx, fork, siblings) : "squash");
+	const note = parsed.positionals.join(" ");
+	const flagMode: MergeMode | undefined =
+		parsed.values.squash === true
+			? "squash"
+			: parsed.values["no-llm"] === true
+				? "no-llm"
+				: parsed.values.discard === true
+					? "discard"
+					: parsed.values.tournament === true
+						? "tournament"
+						: undefined;
+	const mode = flagMode ?? (parsed.values.pick === true ? await pickMode(ctx, fork, siblings) : "squash");
 	if (!mode) {
 		ctx.ui.notify("merge cancelled — nothing written", "info");
 		return;

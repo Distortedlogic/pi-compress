@@ -1,10 +1,12 @@
 import { basename } from "node:path";
+import { parseArgs } from "node:util";
 import { contentText } from "@earendil-works/pi-ai";
 import {
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
 	getMarkdownTheme,
+	getSelectListTheme,
 	getSettingsListTheme,
 	type SessionEntry,
 	TreeSelectorComponent,
@@ -22,7 +24,6 @@ import {
 	type TUI,
 	truncateToWidth,
 } from "@earendil-works/pi-tui";
-import parseArgs from "yargs-parser";
 import { renderGauge } from "./ambient.ts";
 import { branchHandler, exportDecisions, mergeHandler, notifyDecisions } from "./branches.ts";
 import {
@@ -89,12 +90,11 @@ interface CropFlags {
 	keep: string[];
 }
 
-const ARGUMENT_CONFIGURATION = {
-	"boolean-negation": false,
-	"camel-case-expansion": false,
-	"parse-numbers": false,
-	"unknown-options-as-args": true,
-} as const;
+function parseNumberFlag(value: unknown): number | undefined {
+	if (typeof value !== "string") return undefined;
+	const parsed = Number(value);
+	return Number.isFinite(parsed) ? parsed : undefined;
+}
 
 export interface PanelOpenOptions {
 	initialView?: PanelView;
@@ -177,16 +177,6 @@ class PanelController {
 				return "↑↓/jk scroll · c crop this entry · esc back · q close";
 		}
 	}
-}
-
-function selectTheme(theme: PiTheme) {
-	return {
-		selectedPrefix: (text: string) => theme.fg("accent", text),
-		selectedText: (text: string) => theme.fg("accent", text),
-		description: (text: string) => theme.fg("muted", text),
-		scrollInfo: (text: string) => theme.fg("dim", text),
-		noMatch: (text: string) => theme.fg("warning", text),
-	};
 }
 
 function currentTurnId(input: PanelInput, turns: readonly ContextTurn[]): string | undefined {
@@ -327,7 +317,7 @@ export class ContextPanel {
 			label: `${consumer.key} · ${consumer.entries} ${consumer.entries === 1 ? "entry" : "entries"} · ${(consumer.share * 100).toFixed(0)}%`,
 			description: `${fmtTokens(consumer.tokens).padStart(7)} ${"▰".repeat(Math.max(1, Math.round((consumer.tokens / largest) * 28)))}`,
 		}));
-		const list = new SelectList(items, this.opts.maxBody ?? 26, selectTheme(this.opts.theme));
+		const list = new SelectList(items, this.opts.maxBody ?? 26, getSelectListTheme());
 		list.onCancel = () => this.switchView("tree");
 		return list;
 	}
@@ -360,7 +350,7 @@ export class ContextPanel {
 		if (items.length === 0) {
 			items.push({ value: "", label: "(no decision records on this trunk yet — /merge → squash creates them)" });
 		}
-		const list = new SelectList(items, Math.max(3, (this.opts.maxBody ?? 26) - 5), selectTheme(this.opts.theme));
+		const list = new SelectList(items, Math.max(3, (this.opts.maxBody ?? 26) - 5), getSelectListTheme());
 		const detail = new Text("", 2, 0);
 		const showDetails = (item: SelectItem): void => {
 			detail.setText(detailsById.get(item.value) ?? "");
@@ -664,21 +654,28 @@ function notifyDryRun(ctx: ExtensionCommandContext, plan: CropPlan): void {
 
 export async function cropHandler(pi: ExtensionAPI, ctx: ExtensionCommandContext, args: string): Promise<void> {
 	await ctx.waitForIdle();
-	const parsed = parseArgs(args, {
-		array: ["keep"],
-		boolean: ["auto", "dry-run", "apply", "top"],
-		number: ["min-tokens", "older-than"],
-		string: ["keep"],
-		configuration: ARGUMENT_CONFIGURATION,
+	const parsed = parseArgs({
+		args: args.trim().split(/\s+/).filter(Boolean),
+		options: {
+			auto: { type: "boolean" },
+			"dry-run": { type: "boolean" },
+			apply: { type: "boolean" },
+			top: { type: "boolean" },
+			"min-tokens": { type: "string" },
+			"older-than": { type: "string" },
+			keep: { type: "string", multiple: true },
+		},
+		allowPositionals: true,
+		strict: false,
 	});
 	const flags: CropFlags = {
-		auto: parsed.auto === true,
-		dryRun: parsed["dry-run"] === true,
-		apply: parsed.apply === true,
-		top: parsed.top === true,
-		minTokens: typeof parsed["min-tokens"] === "number" ? parsed["min-tokens"] : undefined,
-		olderThan: typeof parsed["older-than"] === "number" ? parsed["older-than"] : undefined,
-		keep: parsed.keep === undefined ? [] : (Array.isArray(parsed.keep) ? parsed.keep : [parsed.keep]).map(String),
+		auto: parsed.values.auto === true,
+		dryRun: parsed.values["dry-run"] === true,
+		apply: parsed.values.apply === true,
+		top: parsed.values.top === true,
+		minTokens: parseNumberFlag(parsed.values["min-tokens"]),
+		olderThan: parseNumberFlag(parsed.values["older-than"]),
+		keep: (parsed.values.keep ?? []).map(String),
 	};
 	const state = deriveState(ctx);
 	if (!state.leafId) {
@@ -817,10 +814,15 @@ export function registerPanel(pi: ExtensionAPI, draft: DraftFn): void {
 	pi.registerCommand("decisions", {
 		description: "pi-compress: decision records on the current trunk (F7) — --export [path] for portable markdown",
 		handler: async (args, ctx) => {
-			const parsed = parseArgs(args, { string: ["export"], configuration: ARGUMENT_CONFIGURATION });
-			if (Object.hasOwn(parsed, "export")) {
-				const optionPath = typeof parsed.export === "string" ? parsed.export.trim() : "";
-				const positionalPath = parsed._[0] === undefined ? "" : String(parsed._[0]);
+			const parsed = parseArgs({
+				args: args.trim().split(/\s+/).filter(Boolean),
+				options: { export: { type: "string" } },
+				allowPositionals: true,
+				strict: false,
+			});
+			if (parsed.values.export !== undefined) {
+				const optionPath = typeof parsed.values.export === "string" ? parsed.values.export.trim() : "";
+				const positionalPath = parsed.positionals[0] === undefined ? "" : String(parsed.positionals[0]);
 				exportDecisions(ctx, optionPath || positionalPath || undefined);
 				return;
 			}
