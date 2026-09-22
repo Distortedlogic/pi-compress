@@ -42,16 +42,16 @@
 		"minimatch": "10.2.6"
 	},
 	"peerDependencies": {
-		"@earendil-works/pi-ai": "*",
-		"@earendil-works/pi-coding-agent": ">=0.85.1 <1",
-		"@earendil-works/pi-tui": ">=0.85.1 <1",
+		"@earendil-works/pi-ai": "0.87.0",
+		"@earendil-works/pi-coding-agent": "0.87.0",
+		"@earendil-works/pi-tui": "0.87.0",
 		"typebox": "*"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.14",
-		"@earendil-works/pi-ai": "0.85.1",
-		"@earendil-works/pi-coding-agent": "0.85.1",
-		"@earendil-works/pi-tui": "0.85.1",
+		"@earendil-works/pi-ai": "0.87.0",
+		"@earendil-works/pi-coding-agent": "0.87.0",
+		"@earendil-works/pi-tui": "0.87.0",
 		"@types/node": "22.19.0",
 		"knip": "6.35.1",
 		"tsx": "4.23.15",

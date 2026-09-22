@@ -45,7 +45,7 @@ export class MemorySession {
 		});
 	}
 
-	toolUse(name: string, args: Record<string, unknown>, text: string): { call: string; result: string } {
+	toolUse(name: string, args: ToolCall["arguments"], text: string): { call: string; result: string } {
 		const id = `call-${this.now}`;
 		const call = this.assistant("", [{ type: "toolCall", id, name, arguments: args }]);
 		return { call, result: this.toolResult(name, text, id) };

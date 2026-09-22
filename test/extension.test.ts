@@ -95,6 +95,7 @@ function world(): World {
 			const list = handlers.get(name) ?? [];
 			list.push(handler as never);
 			handlers.set(name, list);
+			return () => {};
 		},
 		sendMessage: (message) => {
 			session.manager.appendCustomMessageEntry(message.customType, message.content, message.display, message.details);
