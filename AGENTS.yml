@@ -4,5 +4,6 @@ pi-preload:
   includes:
     - "package.json"
     - "tsconfig.json"
+  signatures:
     - "src/**/*.ts"
     - "test/**/*.ts"
