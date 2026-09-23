@@ -59,9 +59,9 @@ import {
 type PiTheme = ExtensionContext["ui"]["theme"];
 type NativeTree = ReturnType<ExtensionContext["sessionManager"]["getTree"]>;
 
-export type PanelView = "tree" | "crop" | "consumers" | "decisions" | "inspect";
+type PanelView = "tree" | "crop" | "consumers" | "decisions" | "inspect";
 
-export interface PanelInput extends SessionSnapshot {
+interface PanelInput extends SessionSnapshot {
 	forks: ForkInfo[];
 	project: string;
 	sessionName?: string;
@@ -96,13 +96,13 @@ function parseNumberFlag(value: unknown): number | undefined {
 	return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-export interface PanelOpenOptions {
+interface PanelOpenOptions {
 	initialView?: PanelView;
 	premark?: string[];
 	dryRun?: boolean;
 }
 
-export interface ContextPanelOptions {
+interface ContextPanelOptions {
 	input: PanelInput;
 	tui: TUI;
 	theme: PiTheme;
@@ -195,7 +195,7 @@ function decorateTree(nodes: NativeTree, forks: readonly ForkInfo[]): NativeTree
 	});
 }
 
-export class ContextPanel {
+class ContextPanel {
 	focused = false;
 	readonly opts: ContextPanelOptions;
 	readonly controller: PanelController;
@@ -600,7 +600,7 @@ export class ContextPanel {
 	}
 }
 
-export function buildPanelInput(ctx: ExtensionContext, opts: PanelOpenOptions = {}): PanelInput {
+function buildPanelInput(ctx: ExtensionContext, opts: PanelOpenOptions = {}): PanelInput {
 	const usage = ctx.getContextUsage();
 	const state = deriveState(ctx);
 	return {

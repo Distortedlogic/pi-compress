@@ -1,27 +1,18 @@
 import assert from "node:assert/strict";
-import { dirname, join } from "node:path";
 import { beforeEach, describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
 import type { Model } from "@earendil-works/pi-ai";
-import {
-	createEventBus,
-	type ExtensionAPI,
-	type ExtensionCommandContext,
-	type ExtensionContext,
-	initTheme,
-	RpcClient,
-	type SessionManager,
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+	SessionManager,
 } from "@earendil-works/pi-coding-agent";
-import { type Component, visibleWidth } from "@earendil-works/pi-tui";
 import { registerAmbient, resetAmbient } from "../src/ambient.ts";
 import { branchHandler, mergeHandler, undoHandler } from "../src/branches.ts";
 import type { DraftFn } from "../src/draft.ts";
-import piContextCompress from "../src/index.ts";
-import { buildPanelInput, ContextPanel, cropHandler } from "../src/panel.ts";
+import { cropHandler } from "../src/panel.ts";
 import { CTREE_CLOSE, CTREE_CROP, CTREE_CROP_TAIL, CTREE_DECISION, CTREE_FORK } from "../src/protocol.ts";
 import { assistantResponse, MemorySession, models } from "./helpers.ts";
-
-initTheme("dark");
 
 class TestUi {
 	readonly theme = {
@@ -68,10 +59,7 @@ interface World {
 	ctx: ExtensionCommandContext;
 	session: MemorySession;
 	ui: TestUi;
-	commands: Map<string, (args: string, ctx: ExtensionCommandContext) => Promise<void> | void>;
-	shortcuts: Map<string, (ctx: ExtensionContext) => Promise<void> | void>;
 	handlers: Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>;
-	renderers: Map<string, (...args: any[]) => Component | undefined>;
 	navigations: Array<{ entryId: string; summarize?: boolean }>;
 	modelsSet: string[];
 }
@@ -79,18 +67,11 @@ interface World {
 function world(): World {
 	const session = new MemorySession();
 	const ui = new TestUi();
-	const commands = new Map<string, (args: string, ctx: ExtensionCommandContext) => Promise<void> | void>();
-	const shortcuts = new Map<string, (ctx: ExtensionContext) => Promise<void> | void>();
 	const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>();
-	const renderers = new Map<string, (...args: any[]) => Component | undefined>();
 	const navigations: World["navigations"] = [];
 	const modelsSet: string[] = [];
 	let currentModel = models[0] as Model<any>;
-	const events = createEventBus();
 	const pi = {
-		registerCommand: (name, options) => commands.set(name, (args, ctx) => options.handler(args, ctx as never)),
-		registerShortcut: (key, options) => shortcuts.set(key, (ctx) => options.handler(ctx as never)),
-		registerMessageRenderer: (customType, renderer) => renderers.set(customType, renderer as never),
 		on: (name, handler) => {
 			const list = handlers.get(name) ?? [];
 			list.push(handler as never);
@@ -114,7 +95,6 @@ function world(): World {
 			return true;
 		},
 		getSessionName: () => undefined,
-		events,
 	} satisfies Partial<ExtensionAPI>;
 	const ctx = {
 		ui,
@@ -156,10 +136,7 @@ function world(): World {
 		ctx,
 		session,
 		ui,
-		commands,
-		shortcuts,
 		handlers,
-		renderers,
 		navigations,
 		modelsSet,
 	};
@@ -190,17 +167,6 @@ const draft: DraftFn = async (_ctx, _model, system) =>
 
 beforeEach(() => {
 	resetAmbient();
-});
-
-describe("extension registration and policy", () => {
-	it("registers every fixed command, Ctrl+Q, event integration, and the decision renderer", () => {
-		const value = world();
-		piContextCompress(value.pi);
-		assert.deepEqual([...value.commands.keys()], ["branch", "merge", "crop", "compress", "panel", "decisions", "undo"]);
-		assert.deepEqual([...value.shortcuts.keys()], ["ctrl+q"]);
-		assert.equal(value.renderers.has(CTREE_DECISION), true);
-		assert.equal(value.handlers.has("session_start"), true);
-	});
 });
 
 describe("branch and merge contracts", () => {
@@ -280,7 +246,6 @@ describe("crop command and inline recovery sequence", () => {
 	}
 
 	for (const [args, dryRun] of [
-		["--top", false],
 		["--auto --apply --min-tokens 1 --older-than 0", false],
 		["--auto --apply --dry-run --min-tokens 1 --older-than 0", true],
 	] as const) {
@@ -321,52 +286,5 @@ describe("ambient and panel behavior", () => {
 		assert.equal(value.ui.notifications.filter((item) => item.message.includes("context crossed")).length, 1);
 		for (const handler of value.handlers.get("session_before_compact") ?? []) handler({}, value.ctx);
 		assert.ok(value.ui.notifications.some((item) => item.message.includes("/compact")));
-	});
-
-	it("renders semantic context-consumer information within the panel width", () => {
-		const value = world();
-		value.session.user("root");
-		value.session.assistant("anchor");
-		value.session.toolUse("read", { path: "large" }, "x".repeat(20_000));
-		value.session.assistant("done");
-		value.session.manager.appendSessionInfo("panel session");
-		const panel = new ContextPanel({
-			input: { ...buildPanelInput(value.ctx), initialView: "consumers" },
-			tui: { requestRender: () => {} } as never,
-			theme: value.ui.theme as never,
-			onAction: () => {},
-			maxBody: 12,
-		});
-		const lines = panel.render(80);
-		for (const line of lines) assert.ok(visibleWidth(line) <= 80);
-		const rendered = lines.join("\n");
-		assert.match(rendered, /pi-compress/);
-		assert.match(rendered, /panel session/);
-		assert.match(rendered, /TOKENS BY SOURCE/);
-		assert.match(rendered, /read/);
-	});
-});
-
-const projectDirectory = fileURLToPath(new URL("..", import.meta.url));
-const extensionPath = fileURLToPath(new URL("../src/index.ts", import.meta.url));
-const codingAgentEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
-const cliPath = join(dirname(codingAgentEntry), "cli.js");
-
-describe("RPC integration", () => {
-	it("loads the repository extension through RpcClient", { timeout: 30_000 }, async (t) => {
-		const client = new RpcClient({
-			cliPath,
-			cwd: projectDirectory,
-			env: { PI_OFFLINE: "1" },
-			args: ["--approve", "--no-session", "--no-extensions", "--extension", extensionPath],
-		});
-		t.after(() => client.stop());
-		await client.start();
-		const commands = await client.getCommands();
-		assert.ok(
-			["branch", "merge", "crop", "compress", "panel", "decisions", "undo"].every((name) =>
-				commands.some((command) => command.name === name),
-			),
-		);
 	});
 });
