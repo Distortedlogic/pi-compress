@@ -176,14 +176,19 @@ describe("direct range compression API", () => {
 		};
 	}
 
-	it("prepares, reviews, and applies one readonly range value", async () => {
-		const world = directWorld();
+	it("prepares, reviews, and applies one readonly range value with the current model", async () => {
+		let draftedWith: unknown;
+		const world = directWorld(async (...args: unknown[]) => {
+			draftedWith = args[0];
+			return assistantResponse("summary");
+		});
 		const target: RangeCompressionTarget = {
 			operationId: "direct-operation",
 			startEntryId: world.selected,
 			endEntryId: world.selected,
 		};
 		const prepared: PreparedRangeCompression = await prepareRangeCompression(world.ctx, target);
+		assert.equal(draftedWith, world.ctx.model);
 		assert.deepEqual(prepared.plan.selectedEntryIds, [world.selected]);
 		const reviewed = await reviewRangeCompression(world.ctx, prepared);
 		assert.ok(reviewed);
@@ -194,20 +199,6 @@ describe("direct range compression API", () => {
 			.filter((entry) => "customType" in entry)
 			.map((entry) => (entry as { customType: string }).customType);
 		assert.deepEqual(types.slice(-2), [CTREE_RANGE_TAIL, CTREE_RANGE_COMPACT]);
-	});
-
-	it("drafts with the current model", async () => {
-		let draftedWith: unknown;
-		const world = directWorld(async (...args: unknown[]) => {
-			draftedWith = args[0];
-			return assistantResponse("summary");
-		});
-		await prepareRangeCompression(world.ctx, {
-			operationId: "current-model",
-			startEntryId: world.selected,
-			endEntryId: world.selected,
-		});
-		assert.equal(draftedWith, world.ctx.model);
 	});
 
 	it("rejects an oversized range before drafting or writing", async () => {

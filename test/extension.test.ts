@@ -245,17 +245,16 @@ describe("crop command and inline recovery sequence", () => {
 		return { value };
 	}
 
-	for (const [args, dryRun] of [
-		["--auto --apply --min-tokens 1 --older-than 0", false],
-		["--auto --apply --dry-run --min-tokens 1 --older-than 0", true],
-	] as const) {
-		it(`preserves headless mode ${args}`, async () => {
+	it("preserves headless automatic apply and dry-run modes", async () => {
+		for (const [args, expected] of [
+			["--auto --apply --min-tokens 1 --older-than 0", [CTREE_CROP_TAIL, CTREE_CROP]],
+			["--auto --apply --dry-run --min-tokens 1 --older-than 0", []],
+		] as const) {
 			const { value } = cropWorld();
 			await cropHandler(value.pi, value.ctx, args);
-			const sequence = durableSequence(value.session.manager);
-			assert.deepEqual(sequence, dryRun ? [] : [CTREE_CROP_TAIL, CTREE_CROP]);
-		});
-	}
+			assert.deepEqual(durableSequence(value.session.manager), expected);
+		}
+	});
 });
 
 describe("append-only undo", () => {
@@ -283,8 +282,8 @@ describe("ambient and panel behavior", () => {
 		registerAmbient(value.pi);
 		for (const handler of value.handlers.get("session_start") ?? []) handler({}, value.ctx);
 		for (const handler of value.handlers.get("turn_end") ?? []) handler({}, value.ctx);
-		assert.equal(value.ui.notifications.filter((item) => item.message.includes("context crossed")).length, 1);
+		assert.equal(value.ui.notifications.filter((item) => item.type === "warning").length, 1);
 		for (const handler of value.handlers.get("session_before_compact") ?? []) handler({}, value.ctx);
-		assert.ok(value.ui.notifications.some((item) => item.message.includes("/compact")));
+		assert.equal(value.ui.notifications.filter((item) => item.type === "warning").length, 2);
 	});
 });
