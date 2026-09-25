@@ -52,17 +52,17 @@ describe("crop reconstruction", () => {
 		assert.ok(snapshot.entries.some((entry) => entry.id === old.result));
 	});
 
-	it("keeps steering messages and the complete answer in one removable turn", () => {
+	it("keeps scheduled prompt messages and the complete answer in one removable turn", () => {
 		const session = new MemorySession();
 		session.user("root");
 		session.assistant("anchor");
 		const user = session.user("inspect the file");
-		const acknowledgement = session.manager.appendCustomMessageEntry("pi-steering", "acknowledged", true);
+		const acknowledgement = session.manager.appendCustomMessageEntry("pi-prompts", "acknowledged", true);
 		const assistantToolCall = session.assistant("", [
 			{ type: "toolCall", id: "call-read", name: "read", arguments: { path: "file.ts" } },
 		]);
 		const toolResult = session.toolResult("read", "contents", "call-read");
-		const reminder = session.manager.appendCustomMessageEntry("pi-steering", "review scope", false);
+		const reminder = session.manager.appendCustomMessageEntry("pi-prompts", "review scope", false);
 		const assistantResponse = session.assistant("done");
 
 		const plan = planRemoveTurns(snapshotSession(session.manager), [user]);
