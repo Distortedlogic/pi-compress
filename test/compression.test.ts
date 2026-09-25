@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { snapshotSession } from "../src/context.ts";
-import { planCrop, renderReconstruction } from "../src/crop.ts";
+import { planCrop, planRemoveTurns, renderReconstruction } from "../src/crop.ts";
 import {
 	type BatchSnapshot,
 	COMPRESSION_ENTRY,
@@ -50,6 +50,30 @@ describe("crop reconstruction", () => {
 		assert.ok(rendered.includes("analysis"));
 		assert.ok(!rendered.includes("A".repeat(200)));
 		assert.ok(snapshot.entries.some((entry) => entry.id === old.result));
+	});
+
+	it("keeps steering messages and the complete answer in one removable turn", () => {
+		const session = new MemorySession();
+		session.user("root");
+		session.assistant("anchor");
+		const user = session.user("inspect the file");
+		const acknowledgement = session.manager.appendCustomMessageEntry("pi-steering", "acknowledged", true);
+		const assistantToolCall = session.assistant("", [
+			{ type: "toolCall", id: "call-read", name: "read", arguments: { path: "file.ts" } },
+		]);
+		const toolResult = session.toolResult("read", "contents", "call-read");
+		const reminder = session.manager.appendCustomMessageEntry("pi-steering", "review scope", false);
+		const assistantResponse = session.assistant("done");
+
+		const plan = planRemoveTurns(snapshotSession(session.manager), [user]);
+		assert.deepEqual(plan.dropped[0]?.entryIds, [
+			user,
+			acknowledgement,
+			assistantToolCall,
+			toolResult,
+			reminder,
+			assistantResponse,
+		]);
 	});
 });
 

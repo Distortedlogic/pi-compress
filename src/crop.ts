@@ -49,6 +49,7 @@ function firstLine(text: string, max = 80): string {
 }
 
 function isAnswerEntry(entry: SessionEntry): boolean {
+	if (entry.type === "custom_message") return entry.customType === "pi-steering";
 	if (entry.type !== "message") return false;
 	const role = entry.message.role;
 	return role === "assistant" || role === "toolResult" || role === "bashExecution";
