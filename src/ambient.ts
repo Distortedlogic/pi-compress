@@ -51,7 +51,7 @@ let lastConsumers = new Map<string, number>();
 const TREND_PTS = 3;
 const ATTRIBUTE_PTS = 5;
 
-export function resetAmbient(): void {
+function resetAmbient(): void {
 	warnedRed = false;
 	lastPct = null;
 	lastConsumers = new Map();

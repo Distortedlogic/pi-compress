@@ -16,6 +16,7 @@ import {
 import {
 	applyCompression,
 	applyPreparedRangeCompression,
+	compressRange,
 	type PreparedRangeCompression,
 	prepareCompression,
 	prepareRangeCompression,
@@ -223,6 +224,20 @@ describe("direct range compression API", () => {
 			.filter((entry) => "customType" in entry)
 			.map((entry) => (entry as { customType: string }).customType);
 		assert.deepEqual(types.slice(-2), [CTREE_RANGE_TAIL, CTREE_RANGE_COMPACT]);
+	});
+
+	it("writes nothing when range review is cancelled", async () => {
+		const world = directWorld();
+		world.ctx.ui.editor = async () => undefined;
+		const entriesBefore = world.session.manager.getEntries().length;
+		const result = await compressRange(world.pi, world.ctx, {
+			operationId: "cancelled-range",
+			startEntryId: world.selected,
+			endEntryId: world.selected,
+			review: true,
+		});
+		assert.deepEqual(result, { status: "cancelled" });
+		assert.equal(world.session.manager.getEntries().length, entriesBefore);
 	});
 
 	it("rejects an oversized range before drafting or writing", async () => {

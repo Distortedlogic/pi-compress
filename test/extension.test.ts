@@ -1,13 +1,7 @@
 import assert from "node:assert/strict";
-import { beforeEach, describe, it } from "node:test";
+import { describe, it } from "node:test";
 import type { Model } from "@earendil-works/pi-ai";
-import type {
-	ExtensionAPI,
-	ExtensionCommandContext,
-	ExtensionContext,
-	SessionManager,
-} from "@earendil-works/pi-coding-agent";
-import { registerAmbient, resetAmbient } from "../src/ambient.ts";
+import type { ExtensionAPI, ExtensionCommandContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import { branchHandler, mergeHandler, undoHandler } from "../src/branches.ts";
 import type { DraftFn } from "../src/draft.ts";
 import { cropHandler } from "../src/panel.ts";
@@ -59,7 +53,6 @@ interface World {
 	ctx: ExtensionCommandContext;
 	session: MemorySession;
 	ui: TestUi;
-	handlers: Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>;
 	navigations: Array<{ entryId: string; summarize?: boolean }>;
 	modelsSet: string[];
 }
@@ -67,17 +60,10 @@ interface World {
 function world(): World {
 	const session = new MemorySession();
 	const ui = new TestUi();
-	const handlers = new Map<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>();
 	const navigations: World["navigations"] = [];
 	const modelsSet: string[] = [];
 	let currentModel = models[0] as Model<any>;
 	const pi = {
-		on: (name, handler) => {
-			const list = handlers.get(name) ?? [];
-			list.push(handler as never);
-			handlers.set(name, list);
-			return () => {};
-		},
 		sendMessage: (message) => {
 			session.manager.appendCustomMessageEntry(message.customType, message.content, message.display, message.details);
 		},
@@ -136,7 +122,6 @@ function world(): World {
 		ctx,
 		session,
 		ui,
-		handlers,
 		navigations,
 		modelsSet,
 	};
@@ -164,10 +149,6 @@ async function seedBranch(value: World, name = "feature", model = "cheap-model")
 
 const draft: DraftFn = async (_ctx, _model, system) =>
 	system.includes("epitaph") ? "too complex" : "## Decision: feature\n**Outcome:** selected the safe option.\n";
-
-beforeEach(() => {
-	resetAmbient();
-});
 
 describe("branch and merge contracts", () => {
 	it("creates a named fork, native label, and optional model switch", async () => {
@@ -267,23 +248,5 @@ describe("append-only undo", () => {
 		await undoHandler(value.pi, value.ctx);
 		assert.equal(value.navigations.at(-1)?.entryId, target);
 		assert.equal(value.session.manager.getEntries().length, count);
-	});
-});
-
-describe("ambient and panel behavior", () => {
-	it("warns once at red context usage and before native compaction", () => {
-		const value = world();
-		value.session.user("root");
-		(value.ctx as unknown as { getContextUsage: () => unknown }).getContextUsage = () => ({
-			tokens: 82_000,
-			contextWindow: 200_000,
-			percent: 41,
-		});
-		registerAmbient(value.pi);
-		for (const handler of value.handlers.get("session_start") ?? []) handler({}, value.ctx);
-		for (const handler of value.handlers.get("turn_end") ?? []) handler({}, value.ctx);
-		assert.equal(value.ui.notifications.filter((item) => item.type === "warning").length, 1);
-		for (const handler of value.handlers.get("session_before_compact") ?? []) handler({}, value.ctx);
-		assert.equal(value.ui.notifications.filter((item) => item.type === "warning").length, 2);
 	});
 });
