@@ -10,5 +10,3 @@ dist/
 node_modules/
 .pi/readcache/
 .pi/tmp/
-PRELOAD.md
-TREE.txt
